@@ -1,3 +1,8 @@
+from tools.firmware_tools import FirmwareTools
+from tools.qualcomm_tools import QualcommTools
+from tools.mediatek_tools import MediaTekTools
+from tools.android_tools import AndroidTools
+from tools.samsung_tools import SamsungTools
 import sys
 import shutil
 import subprocess
@@ -249,11 +254,12 @@ class AymtechPro(QMainWindow):
             ("Device Manager", self.create_device_manager),
             ("Device Information", self.create_device_information),
             ("ADB Tools", self.create_adb_page),
-            ("Android Tools", lambda: self.create_tool_page("Android Tools")),
-            ("Samsung Tools", lambda: self.create_tool_page("Samsung Tools")),
-            ("Qualcomm Tools", lambda: self.create_tool_page("Qualcomm Tools")),
-            ("MediaTek Tools", lambda: self.create_tool_page("MediaTek Tools")),
-            ("Firmware Center", lambda: self.create_tool_page("Firmware Center")),
+            ("Android Tools", self.create_android_diagnostics_page),
+            ("Screen Lock Service", self.create_screen_lock_page),
+            ("Samsung Tools", self.create_samsung_tools_page),
+            ("Qualcomm Tools", self.create_qualcomm_tools_page),
+           ("MediaTek Tools", self.create_mediatek_tools_page),
+            ("Firmware Center", self.create_firmware_center_page),
             ("iOS Tools", lambda: self.create_tool_page("iOS Tools")),
             ("Operation Logs", self.create_logs_page),
         ]
@@ -997,7 +1003,795 @@ class AymtechPro(QMainWindow):
         layout.addStretch()
 
         return page
+        # =====================================================
+    # SAMSUNG TOOLS PAGE
+    # =====================================================
 
+    def create_samsung_tools_page(self):
+
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(30, 25, 30, 25)
+
+        layout.addLayout(
+            self.create_page_header(
+                "Samsung Tools",
+                "Samsung device diagnostics and firmware information."
+            )
+        )
+
+        self.samsung_device_combo = QComboBox()
+
+        layout.addWidget(QLabel("Connected Device"))
+        layout.addWidget(self.samsung_device_combo)
+
+        refresh_button = QPushButton("Refresh Devices")
+        refresh_button.clicked.connect(self.refresh_samsung_devices)
+        layout.addWidget(refresh_button)
+
+        buttons = [
+            ("Check Samsung Device", self.samsung_check_device),
+            ("Device Information", self.samsung_device_information),
+            ("Firmware Information", self.samsung_firmware_information),
+            ("Connection Check", self.samsung_connection_check),
+        ]
+
+        for title, function in buttons:
+            button = QPushButton(title)
+            button.setObjectName("Primary")
+            button.clicked.connect(function)
+            layout.addWidget(button)
+
+        self.samsung_result_box = QTextEdit()
+        self.samsung_result_box.setReadOnly(True)
+        layout.addWidget(self.samsung_result_box, 1)
+
+        self.refresh_samsung_devices()
+
+        return page
+
+    def refresh_samsung_devices(self):
+
+        self.samsung_device_combo.clear()
+
+        ok, output = ADBTools.devices()
+
+        if not ok:
+            self.samsung_result_box.setPlainText(output)
+            return
+
+        for line in output.splitlines()[1:]:
+            parts = line.split()
+
+            if len(parts) >= 2 and parts[1] == "device":
+                self.samsung_device_combo.addItem(parts[0])
+
+        if self.samsung_device_combo.count() == 0:
+            self.samsung_result_box.setPlainText(
+                "No authorized Android devices found."
+            )
+
+    def get_samsung_device(self):
+
+        serial = self.samsung_device_combo.currentText().strip()
+
+        if not serial:
+            QMessageBox.warning(
+                self,
+                "No Device",
+                "Please connect and select a device."
+            )
+            return None
+
+        return serial
+
+    def samsung_check_device(self):
+
+        serial = self.get_samsung_device()
+        if not serial:
+            return
+
+        ok, output = SamsungTools.check_samsung_device(serial)
+
+        self.samsung_result_box.setPlainText(output)
+
+    def samsung_device_information(self):
+
+        serial = self.get_samsung_device()
+        if not serial:
+            return
+
+        ok, output = SamsungTools.device_information(serial)
+
+        self.samsung_result_box.setPlainText(output)
+
+    def samsung_firmware_information(self):
+
+        serial = self.get_samsung_device()
+        if not serial:
+            return
+
+        ok, output = SamsungTools.firmware_information(serial)
+
+        self.samsung_result_box.setPlainText(output)
+
+    def samsung_connection_check(self):
+
+        serial = self.get_samsung_device()
+        if not serial:
+            return
+
+        ok, output = SamsungTools.check_connection(serial)
+
+        self.samsung_result_box.setPlainText(output)
+         # =====================================================
+    # QUALCOMM TOOLS PAGE
+    # =====================================================
+
+    def create_qualcomm_tools_page(self):
+
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(30, 25, 30, 25)
+
+        layout.addLayout(
+            self.create_page_header(
+                "Qualcomm Tools",
+                "Qualcomm chipset diagnostics and device information."
+            )
+        )
+
+        self.qualcomm_device_combo = QComboBox()
+
+        layout.addWidget(QLabel("Connected Device"))
+        layout.addWidget(self.qualcomm_device_combo)
+
+        refresh_button = QPushButton("Refresh Devices")
+        refresh_button.clicked.connect(self.refresh_qualcomm_devices)
+        layout.addWidget(refresh_button)
+
+        buttons = [
+            ("Check Qualcomm Device", self.qualcomm_check_device),
+            ("Device Information", self.qualcomm_device_information),
+            ("Firmware Information", self.qualcomm_firmware_information),
+            ("Connection Check", self.qualcomm_connection_check),
+        ]
+
+        for title, function in buttons:
+            button = QPushButton(title)
+            button.setObjectName("Primary")
+            button.clicked.connect(function)
+            layout.addWidget(button)
+
+        self.qualcomm_result_box = QTextEdit()
+        self.qualcomm_result_box.setReadOnly(True)
+        layout.addWidget(self.qualcomm_result_box, 1)
+
+        self.refresh_qualcomm_devices()
+
+        return page
+
+    def refresh_qualcomm_devices(self):
+
+        self.qualcomm_device_combo.clear()
+
+        ok, output = ADBTools.devices()
+
+        if not ok:
+            self.qualcomm_result_box.setPlainText(output)
+            return
+
+        for line in output.splitlines()[1:]:
+            parts = line.split()
+
+            if len(parts) >= 2 and parts[1] == "device":
+                self.qualcomm_device_combo.addItem(parts[0])
+
+        if self.qualcomm_device_combo.count() == 0:
+            self.qualcomm_result_box.setPlainText(
+                "No authorized Android devices found."
+            )
+
+    def get_qualcomm_device(self):
+
+        serial = self.qualcomm_device_combo.currentText().strip()
+
+        if not serial:
+            QMessageBox.warning(
+                self,
+                "No Device",
+                "Please connect and select a device."
+            )
+            return None
+
+        return serial
+
+    def qualcomm_check_device(self):
+
+        serial = self.get_qualcomm_device()
+        if not serial:
+            return
+
+        ok, output = QualcommTools.check_qualcomm_device(serial)
+        self.qualcomm_result_box.setPlainText(output)
+
+    def qualcomm_device_information(self):
+
+        serial = self.get_qualcomm_device()
+        if not serial:
+            return
+
+        ok, output = QualcommTools.device_information(serial)
+        self.qualcomm_result_box.setPlainText(output)
+
+    def qualcomm_firmware_information(self):
+
+        serial = self.get_qualcomm_device()
+        if not serial:
+            return
+
+        ok, output = QualcommTools.firmware_information(serial)
+        self.qualcomm_result_box.setPlainText(output)
+
+    def qualcomm_connection_check(self):
+
+        serial = self.get_qualcomm_device()
+        if not serial:
+            return
+
+        ok, output = QualcommTools.check_connection(serial)
+        self.qualcomm_result_box.setPlainText(output)   
+        # =====================================================
+
+    # =====================================================
+    # MEDIATEK TOOLS PAGE
+    # =====================================================
+
+    def create_mediatek_tools_page(self):
+
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(30, 25, 30, 25)
+
+        layout.addLayout(
+            self.create_page_header(
+                "MediaTek Tools",
+                "MediaTek chipset diagnostics and device information."
+            )
+        )
+
+        self.mediatek_device_combo = QComboBox()
+
+        layout.addWidget(QLabel("Connected Device"))
+        layout.addWidget(self.mediatek_device_combo)
+
+        refresh_button = QPushButton("Refresh Devices")
+        refresh_button.clicked.connect(self.refresh_mediatek_devices)
+        layout.addWidget(refresh_button)
+
+        buttons = [
+            ("Check MediaTek Device", self.mediatek_check_device),
+            ("Device Information", self.mediatek_device_information),
+            ("Firmware Information", self.mediatek_firmware_information),
+            ("Connection Check", self.mediatek_connection_check),
+        ]
+
+        for title, function in buttons:
+            button = QPushButton(title)
+            button.setObjectName("Primary")
+            button.clicked.connect(function)
+            layout.addWidget(button)
+
+        self.mediatek_result_box = QTextEdit()
+        self.mediatek_result_box.setReadOnly(True)
+        layout.addWidget(self.mediatek_result_box, 1)
+
+        self.refresh_mediatek_devices()
+        return page
+
+    def refresh_mediatek_devices(self):
+
+        self.mediatek_device_combo.clear()
+        ok, output = ADBTools.devices()
+
+        if not ok:
+            self.mediatek_result_box.setPlainText(output)
+            return
+
+        for line in output.splitlines()[1:]:
+            parts = line.split()
+            if len(parts) >= 2 and parts[1] == "device":
+                self.mediatek_device_combo.addItem(parts[0])
+
+        if self.mediatek_device_combo.count() == 0:
+            self.mediatek_result_box.setPlainText(
+                "No authorized Android devices found."
+            )
+
+    def get_mediatek_device(self):
+
+        serial = self.mediatek_device_combo.currentText().strip()
+
+        if not serial:
+            QMessageBox.warning(
+                self, "No Device",
+                "Please connect and select a device."
+            )
+            return None
+
+        return serial
+
+    def mediatek_check_device(self):
+
+        serial = self.get_mediatek_device()
+        if not serial:
+            return
+
+        ok, output = MediaTekTools.check_mediatek_device(serial)
+        self.mediatek_result_box.setPlainText(output)
+
+    def mediatek_device_information(self):
+
+        serial = self.get_mediatek_device()
+        if not serial:
+            return
+
+        ok, output = MediaTekTools.device_information(serial)
+        self.mediatek_result_box.setPlainText(output)
+
+    def mediatek_firmware_information(self):
+
+        serial = self.get_mediatek_device()
+        if not serial:
+            return
+
+        ok, output = MediaTekTools.firmware_information(serial)
+        self.mediatek_result_box.setPlainText(output)
+
+    def mediatek_connection_check(self):
+
+        serial = self.get_mediatek_device()
+        if not serial:
+            return
+
+        ok, output = MediaTekTools.check_connection(serial)
+        self.mediatek_result_box.setPlainText(output)
+
+
+    # =====================================================
+    # FIRMWARE CENTER
+    # =====================================================
+
+    def create_firmware_center_page(self):
+
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(30, 25, 30, 25)
+
+        layout.addLayout(
+            self.create_page_header(
+                "Firmware Center",
+                "Manage firmware files and verify file integrity."
+            )
+        )
+
+        self.firmware_file_path = ""
+
+        self.firmware_path_label = QLabel("No firmware file selected")
+        self.firmware_path_label.setWordWrap(True)
+        layout.addWidget(self.firmware_path_label)
+
+        buttons = [
+            ("Select Firmware File", self.select_firmware_file),
+            ("File Information", self.firmware_file_information),
+            ("Calculate SHA-256", self.firmware_calculate_sha256),
+            ("Scan Firmware Folder", self.firmware_scan_folder),
+        ]
+
+        for title, function in buttons:
+            button = QPushButton(title)
+            button.setObjectName("Primary")
+            button.clicked.connect(function)
+            layout.addWidget(button)
+
+        self.firmware_result_box = QTextEdit()
+        self.firmware_result_box.setReadOnly(True)
+        layout.addWidget(self.firmware_result_box, 1)
+
+        return page
+
+    def select_firmware_file(self):
+
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select Firmware File",
+            "",
+            "Firmware Files (*.zip *.img *.bin *.tar *.md5 *.mbn "
+            "*.xml *.ofp *.kdz *.ftf *.ipsw *.ops *.pac *.br *.dat "
+            "*.lz4);;All Files (*)"
+        )
+
+        if not file_path:
+            return
+
+        self.firmware_file_path = file_path
+        self.firmware_path_label.setText(file_path)
+        self.firmware_result_box.setPlainText(
+            "Firmware file selected successfully."
+        )
+
+    def firmware_file_information(self):
+
+        if not self.firmware_file_path:
+            QMessageBox.warning(
+                self, "No File", "Please select a firmware file first."
+            )
+            return
+
+        ok, output = FirmwareTools.file_information(
+            self.firmware_file_path
+        )
+        self.firmware_result_box.setPlainText(output)
+
+    def firmware_calculate_sha256(self):
+
+        if not self.firmware_file_path:
+            QMessageBox.warning(
+                self, "No File", "Please select a firmware file first."
+            )
+            return
+
+        ok, output = FirmwareTools.calculate_sha256(
+            self.firmware_file_path
+        )
+
+        if ok:
+            output = (
+                "========== SHA-256 CHECKSUM ==========\n"
+                f"File: {self.firmware_file_path}\n"
+                f"SHA-256: {output}\n\n"
+                "Compare this value with the checksum from "
+                "the official firmware source."
+            )
+
+        self.firmware_result_box.setPlainText(output)
+
+    def firmware_scan_folder(self):
+
+        folder = QFileDialog.getExistingDirectory(
+            self, "Select Firmware Folder"
+        )
+
+        if not folder:
+            return
+
+        ok, files = FirmwareTools.get_firmware_files(folder)
+
+        if not ok:
+            self.firmware_result_box.setPlainText(str(files))
+            return
+
+        if not files:
+            self.firmware_result_box.setPlainText(
+                "No recognized firmware files found in this folder."
+            )
+            return
+
+        lines = ["========== FIRMWARE FILES =========="]
+
+        for item in files:
+            size_mb = item["size"] / (1024 * 1024)
+            lines.append(
+                f"{item['name']} | {size_mb:.2f} MB | "
+                f"{item['extension']}\n{item['path']}"
+            )
+
+        self.firmware_result_box.setPlainText("\n\n".join(lines))
+
+
+    # =====================================================
+    # ANDROID SCREEN LOCK SERVICE
+    # =====================================================
+
+    def create_screen_lock_page(self):
+
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(30, 25, 30, 25)
+        layout.setSpacing(12)
+
+        layout.addLayout(
+            self.create_page_header(
+                "Screen Lock Service",
+                "Android device access and official recovery assistant."
+            )
+        )
+
+        info = QLabel(
+            "ANDROID SCREEN LOCK SERVICE\n\n"
+            "This module helps technicians identify Android devices "
+            "and guide customers through official account recovery.\n\n"
+            "Available operations:\n"
+            "• Detect connected Android devices\n"
+            "• Display device brand and model\n"
+            "• Check Android version\n"
+            "• Open official recovery guidance\n\n"
+            "Important: This tool does not bypass screen locks "
+            "or remove device security."
+        )
+        info.setWordWrap(True)
+        info.setStyleSheet("""
+            background-color: #111827;
+            border: 1px solid #263247;
+            border-radius: 10px;
+            padding: 22px;
+            color: #cbd5e1;
+            font-size: 14px;
+        """)
+        layout.addWidget(info)
+
+        brand_label = QLabel("Select device brand:")
+        layout.addWidget(brand_label)
+
+        self.screen_lock_brand = QComboBox()
+        self.screen_lock_brand.addItems([
+            "Samsung", "Xiaomi", "Redmi", "POCO",
+            "OPPO", "Realme", "Huawei", "Motorola",
+            "Google Pixel", "Other Android"
+        ])
+        layout.addWidget(self.screen_lock_brand)
+
+        detect_button = QPushButton("Detect Connected Device")
+        detect_button.setCursor(Qt.PointingHandCursor)
+        detect_button.clicked.connect(self.screen_lock_detect_device)
+        layout.addWidget(detect_button)
+
+        recovery_button = QPushButton("Show Official Recovery Guidance")
+        recovery_button.setCursor(Qt.PointingHandCursor)
+        recovery_button.clicked.connect(self.screen_lock_recovery_guide)
+        layout.addWidget(recovery_button)
+
+        self.screen_lock_result = QTextEdit()
+        self.screen_lock_result.setReadOnly(True)
+        self.screen_lock_result.setPlaceholderText(
+            "Device information and recovery guidance will appear here..."
+        )
+        layout.addWidget(self.screen_lock_result)
+
+        layout.addStretch()
+        return page
+
+    def screen_lock_detect_device(self):
+
+        try:
+            ok, output = ADBTools.devices()
+
+            if not ok:
+                self.screen_lock_result.setPlainText(
+                    "ADB ERROR\\n\\n" + output
+                )
+                return
+
+            connected = []
+
+            for line in output.splitlines():
+                line = line.strip()
+
+                if not line or line.startswith("List of devices"):
+                    continue
+
+                parts = line.split()
+
+                if len(parts) >= 2 and parts[1] == "device":
+                    connected.append(parts[0])
+
+            if not connected:
+                self.screen_lock_result.setPlainText(
+                    "No authorized Android device detected.\\n\\n"
+                    "Connect the phone using USB and authorize USB debugging.\\n"
+                    "A locked phone may not permit ADB access."
+                )
+                return
+
+            results = ["ANDROID DEVICE DIAGNOSTICS\\n"]
+
+            for serial in connected:
+                results.append(ADBTools.device_info(serial))
+                results.append("\\n" + "=" * 45 + "\\n")
+
+            self.screen_lock_result.setPlainText("\\n".join(results))
+
+        except Exception as e:
+            self.screen_lock_result.setPlainText(
+                f"Device detection error:\\n{e}"
+            )
+
+    def screen_lock_recovery_guide(self):
+
+        brand = self.screen_lock_brand.currentText()
+
+        guides = {
+            "Samsung":
+                "Use Samsung's official support and account recovery "
+                "options. A factory reset may erase user data.",
+            "Xiaomi":
+                "Use Xiaomi Account recovery and official support. "
+                "Account verification may be required.",
+            "Redmi":
+                "Use Xiaomi Account recovery and official support. "
+                "Account verification may be required.",
+            "POCO":
+                "Use Xiaomi Account recovery and official support. "
+                "Account verification may be required.",
+            "OPPO":
+                "Contact OPPO official support with proof of ownership.",
+            "Realme":
+                "Contact realme official support with proof of ownership.",
+            "Huawei":
+                "Use Huawei ID recovery and official support.",
+            "Motorola":
+                "Use Google's official Android recovery guidance "
+                "or Motorola support.",
+            "Google Pixel":
+                "Use Google's official account recovery and Pixel support.",
+            "Other Android":
+                "Identify the exact model and contact its manufacturer's "
+                "official support."
+        }
+
+        self.screen_lock_result.setPlainText(
+            f"OFFICIAL RECOVERY GUIDANCE\n\n"
+            f"Brand: {brand}\n\n"
+            f"{guides.get(brand, 'Contact the manufacturer support.')}\n\n"
+            "WARNING:\n"
+            "A factory reset can erase personal data and may still "
+            "require the previously synchronized Google account "
+            "after reset (Factory Reset Protection).\n\n"
+            "Always obtain customer authorization and confirm "
+            "data backup before any reset."
+        )
+
+
+        # ANDROID DIAGNOSTICS PAGE
+    # =====================================================
+
+    def create_android_diagnostics_page(self):
+
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(30, 25, 30, 25)
+
+        layout.addLayout(
+            self.create_page_header(
+                "Android Tools",
+                "Android device diagnostics and servicing."
+            )
+        )
+
+        self.android_device_combo = QComboBox()
+
+        refresh_button = QPushButton("Refresh Devices")
+        refresh_button.clicked.connect(
+            self.refresh_android_devices
+        )
+
+        layout.addWidget(QLabel("Connected Android Device"))
+        layout.addWidget(self.android_device_combo)
+        layout.addWidget(refresh_button)
+
+        buttons = [
+            ("Full Diagnostic", self.android_full_diagnostic),
+            ("Device Information", self.android_device_information),
+            ("Battery Health", self.android_battery_health),
+            ("Storage Analysis", self.android_storage_analysis),
+            ("Installed Apps", self.android_installed_apps),
+        ]
+
+        for title, function in buttons:
+            button = QPushButton(title)
+            button.setObjectName("Primary")
+            button.clicked.connect(function)
+            layout.addWidget(button)
+
+        self.android_result_box = QTextEdit()
+        self.android_result_box.setReadOnly(True)
+
+        layout.addWidget(self.android_result_box, 1)
+
+        self.refresh_android_devices()
+
+        return page
+
+    # =====================================================
+    # ANDROID DIAGNOSTICS ACTIONS
+    # =====================================================
+
+    def refresh_android_devices(self):
+
+        self.android_device_combo.clear()
+
+        ok, output = ADBTools.devices()
+
+        if not ok:
+            self.android_result_box.setPlainText(output)
+            return
+
+        for line in output.splitlines()[1:]:
+
+            parts = line.split()
+
+            if len(parts) >= 2 and parts[1] == "device":
+                self.android_device_combo.addItem(parts[0])
+
+        if self.android_device_combo.count() == 0:
+            self.android_result_box.setPlainText(
+                "No authorized Android devices found.\n"
+                "Connect a phone and enable USB debugging."
+            )
+
+    def get_android_device(self):
+
+        serial = self.android_device_combo.currentText().strip()
+
+        if not serial:
+            QMessageBox.warning(
+                self,
+                "No Device",
+                "Please connect and select an Android device."
+            )
+            return None
+
+        return serial
+
+    def android_full_diagnostic(self):
+
+        serial = self.get_android_device()
+        if not serial:
+            return
+
+        ok, output = AndroidTools.full_diagnostic(serial)
+        self.android_result_box.setPlainText(output)
+        self.log("Android full diagnostic completed.")
+
+    def android_device_information(self):
+
+        serial = self.get_android_device()
+        if not serial:
+            return
+
+        output = ADBTools.device_info(serial)
+        self.android_result_box.setPlainText(output)
+        self.log("Android device information requested.")
+
+    def android_battery_health(self):
+
+        serial = self.get_android_device()
+        if not serial:
+            return
+
+        ok, output = AndroidTools.battery_health(serial)
+        self.android_result_box.setPlainText(output)
+        self.log("Android battery information requested.")
+
+    def android_storage_analysis(self):
+
+        serial = self.get_android_device()
+        if not serial:
+            return
+
+        ok, output = AndroidTools.storage_analysis(serial)
+        self.android_result_box.setPlainText(output)
+        self.log("Android storage analysis requested.")
+
+    def android_installed_apps(self):
+
+        serial = self.get_android_device()
+        if not serial:
+            return
+
+        ok, output = AndroidTools.installed_apps(serial)
+        self.android_result_box.setPlainText(output)
+        self.log("Android installed apps listed.")
     # =====================================================
     # LOGS PAGE
     # =====================================================
