@@ -8,7 +8,7 @@ import shutil
 import subprocess
 from datetime import datetime
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QSettings
 from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
 )
 
 from tools.adb_tools import ADBTools
+from tools.translations import translate_text
 
 
 # =========================================================
@@ -42,108 +43,128 @@ APP_VERSION = "1.1.0"
 
 STYLE = """
 QMainWindow, QWidget {
-    background-color: #0b1120;
-    color: #e5e7eb;
+    background-color: #071426;
+    color: #e8f3ff;
     font-family: Segoe UI;
     font-size: 10pt;
 }
-
-QFrame#Sidebar {
-    background-color: #111827;
-    border-right: 1px solid #263247;
+QFrame#Header {
+    background-color: #081a30;
+    border-bottom: 2px solid #087bd1;
 }
-
-QLabel#Logo {
-    color: #38bdf8;
+QFrame#Sidebar {
+    background-color: #0b1930;
+    border-right: 2px solid #087bd1;
+}
+QFrame#Footer {
+    background-color: #081426;
+    border-top: 1px solid #087bd1;
+}
+QLabel#Brand {
+    color: #29baff;
     font-size: 23pt;
     font-weight: bold;
 }
-
-QLabel#Subtitle {
-    color: #94a3b8;
-    font-size: 9pt;
+QLabel#BrandSubtitle {
+    color: #d8eaff;
+    font-size: 13pt;
+    font-weight: bold;
 }
-
 QLabel#PageTitle {
-    color: #f8fafc;
+    color: #ffffff;
     font-size: 21pt;
     font-weight: bold;
 }
-
-QLabel#CardTitle {
-    color: #94a3b8;
-    font-size: 10pt;
-}
-
-QLabel#CardValue {
-    color: #38bdf8;
+QLabel#HeroTitle {
+    color: #ffffff;
     font-size: 23pt;
     font-weight: bold;
 }
-
+QLabel#HeroDescription {
+    color: #b9d9ff;
+    font-size: 12pt;
+}
+QLabel#CardTitle {
+    color: #ffffff;
+    font-size: 13pt;
+    font-weight: bold;
+}
+QLabel#CardValue {
+    color: #35baff;
+    font-size: 21pt;
+    font-weight: bold;
+}
+QLabel#CardIcon {
+    font-size: 29pt;
+}
+QFrame#Hero, QFrame#DevicePanel, QFrame#ToolCard {
+    background-color: #101e34;
+    border: 1px solid #17639b;
+    border-radius: 13px;
+}
 QPushButton {
-    background-color: #1e293b;
-    color: #e2e8f0;
-    border: 1px solid #334155;
-    border-radius: 7px;
+    background-color: #142943;
+    color: #eaf5ff;
+    border: 1px solid #244c70;
+    border-radius: 8px;
     padding: 10px;
     text-align: left;
 }
-
 QPushButton:hover {
-    background-color: #263b56;
-    border: 1px solid #38bdf8;
+    background-color: #164b78;
+    border: 1px solid #20baff;
 }
-
 QPushButton:checked {
-    background-color: #075985;
-    border: 1px solid #38bdf8;
+    background-color: #0755a8;
+    border-left: 4px solid #28c8ff;
     color: white;
-}
-
-QPushButton#Primary {
-    background-color: #0284c7;
-    color: white;
-    border: none;
     font-weight: bold;
 }
-
-QPushButton#Primary:hover {
-    background-color: #0369a1;
+QPushButton#Primary, QPushButton#CardAction {
+    background-color: #087ce5;
+    color: white;
+    border: none;
+    border-radius: 18px;
+    font-weight: bold;
+    padding: 10px 16px;
+    text-align: center;
 }
-
+QPushButton#Primary:hover, QPushButton#CardAction:hover {
+    background-color: #079fe9;
+}
+QPushButton#HeaderButton {
+    background-color: #10233b;
+    border: 1px solid #28547b;
+    padding: 8px 14px;
+    text-align: center;
+}
 QLineEdit, QComboBox {
-    background-color: #111827;
-    border: 1px solid #334155;
-    border-radius: 6px;
+    background-color: #101e34;
+    border: 1px solid #28547b;
+    border-radius: 7px;
     padding: 9px;
     color: white;
 }
-
 QTableWidget {
-    background-color: #111827;
-    alternate-background-color: #172033;
-    border: 1px solid #263247;
-    border-radius: 7px;
-    gridline-color: #263247;
+    background-color: #101e34;
+    alternate-background-color: #172943;
+    border: 1px solid #244c70;
+    gridline-color: #244c70;
 }
-
 QHeaderView::section {
-    background-color: #1e293b;
-    color: #38bdf8;
+    background-color: #142943;
+    color: #39bdff;
     padding: 9px;
     border: none;
     font-weight: bold;
 }
-
 QTextEdit {
-    background-color: #080e1a;
+    background-color: #081426;
     color: #a7f3d0;
-    border: 1px solid #263247;
+    border: 1px solid #244c70;
     border-radius: 7px;
     padding: 10px;
 }
-
 QLabel {
     background: transparent;
 }
@@ -213,6 +234,14 @@ class AymtechPro(QMainWindow):
 
         self.navigation_buttons = []
 
+        self.settings = QSettings("AYMTECH", "AYMYOUCH")
+        self.current_language = self.settings.value("language", "en")
+        if self.current_language not in ("ar", "fr", "en"):
+            self.current_language = "en"
+
+        self.language_combo = None
+        self.language_label = None
+
         self.build_interface()
         self.refresh_devices()
 
@@ -225,27 +254,76 @@ class AymtechPro(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
 
-        main_layout = QHBoxLayout(central)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(0)
+        root = QVBoxLayout(central)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        # TOP HEADER
+        header = QFrame()
+        header.setObjectName("Header")
+        header.setFixedHeight(105)
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(22, 8, 22, 8)
+
+        brand_box = QVBoxLayout()
+        brand = QLabel("📱 AYMEN")
+        brand.setObjectName("Brand")
+        brand_subtitle = QLabel("Phone Service  |  Professional Android Repair Tool")
+        brand_subtitle.setObjectName("BrandSubtitle")
+        brand_box.addWidget(brand)
+        brand_box.addWidget(brand_subtitle)
+        header_layout.addLayout(brand_box)
+
+        header_layout.addStretch()
+
+        self.language_label = QLabel("Language")
+        header_layout.addWidget(self.language_label)
+
+        self.language_combo = QComboBox()
+        self.language_combo.addItem("🇩🇿 العربية", "ar")
+        self.language_combo.addItem("🇫🇷 Français", "fr")
+        self.language_combo.addItem("🇬🇧 English", "en")
+        self.language_combo.setMinimumWidth(145)
+        self.language_combo.setCurrentIndex(
+            self.language_combo.findData(self.current_language)
+        )
+        self.language_combo.currentIndexChanged.connect(self.change_language)
+        header_layout.addWidget(self.language_combo)
+
+        update_button = QPushButton("⟳  Update")
+        update_button.setObjectName("HeaderButton")
+        update_button.clicked.connect(
+            lambda: QMessageBox.information(
+                self, "Update", "The update service is not configured yet."
+            )
+        )
+        header_layout.addWidget(update_button)
+
+        about_button = QPushButton("ⓘ  About")
+        about_button.setObjectName("HeaderButton")
+        about_button.clicked.connect(
+            lambda: QMessageBox.information(
+                self, "About",
+                f"{APP_NAME}\\nProfessional Mobile Service Tool\\nVersion {APP_VERSION}"
+            )
+        )
+        header_layout.addWidget(about_button)
+
+        root.addWidget(header)
+
+        # CENTER AREA
+        center = QWidget()
+        center_layout = QHBoxLayout(center)
+        center_layout.setContentsMargins(0, 0, 0, 0)
+        center_layout.setSpacing(0)
 
         sidebar = QFrame()
         sidebar.setObjectName("Sidebar")
-        sidebar.setFixedWidth(235)
+        sidebar.setFixedWidth(245)
 
         sidebar_layout = QVBoxLayout(sidebar)
-        sidebar_layout.setContentsMargins(15, 25, 15, 15)
-        sidebar_layout.setSpacing(9)
-
-        logo = QLabel("AYMTECH PRO")
-        logo.setObjectName("Logo")
-        sidebar_layout.addWidget(logo)
-
-        subtitle = QLabel("MOBILE SERVICE CENTER")
-        subtitle.setObjectName("Subtitle")
-        sidebar_layout.addWidget(subtitle)
-
-        sidebar_layout.addSpacing(25)
+        sidebar_layout.setContentsMargins(12, 18, 12, 14)
+        sidebar_layout.setSpacing(7)
 
         self.pages = QStackedWidget()
 
@@ -258,43 +336,106 @@ class AymtechPro(QMainWindow):
             ("Screen Lock Service", self.create_screen_lock_page),
             ("Samsung Tools", self.create_samsung_tools_page),
             ("Qualcomm Tools", self.create_qualcomm_tools_page),
-           ("MediaTek Tools", self.create_mediatek_tools_page),
+            ("MediaTek Tools", self.create_mediatek_tools_page),
             ("Firmware Center", self.create_firmware_center_page),
             ("iOS Tools", lambda: self.create_tool_page("iOS Tools")),
             ("Operation Logs", self.create_logs_page),
         ]
 
-        for title, creator in navigation:
+        self.nav_icons = {
+            "Dashboard": "⌂",
+            "Device Manager": "⚙",
+            "Device Information": "▣",
+            "ADB Tools": "📱",
+            "Android Tools": "🤖",
+            "Screen Lock Service": "🔒",
+            "Samsung Tools": "▣",
+            "Qualcomm Tools": "⚡",
+            "MediaTek Tools": "◆",
+            "Firmware Center": "📦",
+            "iOS Tools": "🍎",
+            "Operation Logs": "📄",
+        }
 
+        for title, creator in navigation:
             button = QPushButton(title)
+            button.setMinimumHeight(43)
             button.setCheckable(True)
             button.setCursor(Qt.PointingHandCursor)
-
             button.clicked.connect(
                 lambda checked=False, t=title: self.navigate(t)
             )
-
             sidebar_layout.addWidget(button)
             self.navigation_buttons.append((title, button))
-
-            page = creator()
-            self.pages.addWidget(page)
+            self.pages.addWidget(creator())
 
         sidebar_layout.addStretch()
 
-        version = QLabel(
-            f"AYMTECH PRO v{APP_VERSION}\n"
-            "Android Service Toolkit"
-        )
-        version.setObjectName("Subtitle")
+        version = QLabel(f"AYMTECH PRO  v{APP_VERSION}")
+        version.setStyleSheet("color:#48baff; font-weight:bold;")
         sidebar_layout.addWidget(version)
 
-        main_layout.addWidget(sidebar)
-        main_layout.addWidget(self.pages, 1)
+        center_layout.addWidget(sidebar)
+        center_layout.addWidget(self.pages, 1)
+        root.addWidget(center, 1)
 
+        # BOTTOM STATUS BAR
+        footer = QFrame()
+        footer.setObjectName("Footer")
+        footer.setFixedHeight(39)
+        footer_layout = QHBoxLayout(footer)
+        footer_layout.setContentsMargins(18, 3, 18, 3)
+
+        self.footer_status = QLabel("🟢  Ready for service")
+        footer_layout.addWidget(self.footer_status)
+        footer_layout.addStretch()
+
+        date_label = QLabel(datetime.now().strftime("%Y/%m/%d"))
+        time_label = QLabel(datetime.now().strftime("%H:%M:%S"))
+        footer_layout.addWidget(QLabel("▦"))
+        footer_layout.addWidget(date_label)
+        footer_layout.addSpacing(20)
+        footer_layout.addWidget(QLabel("◷"))
+        footer_layout.addWidget(time_label)
+        footer_layout.addSpacing(20)
+        footer_layout.addWidget(QLabel(f"V{APP_VERSION}"))
+
+        root.addWidget(footer)
+
+        self.apply_language()
         self.navigate("Dashboard")
 
-    # =====================================================
+
+    def change_language(self, index):
+        language = self.language_combo.itemData(index)
+
+        if language not in ("ar", "fr", "en"):
+            return
+
+        self.current_language = language
+        self.settings.setValue("language", language)
+        self.apply_language()
+
+    def apply_language(self):
+        language = self.current_language
+
+        self.setLayoutDirection(
+            Qt.RightToLeft if language == "ar"
+            else Qt.LeftToRight
+        )
+
+        self.language_label.setText(
+            {"en": "Language", "fr": "Langue", "ar": "اللغة"}[language]
+        )
+
+        for title, button in self.navigation_buttons:
+            icon = getattr(self, "nav_icons", {}).get(title, "")
+            label = translate_text(title, language)
+            button.setText(f"{icon}   {label}" if icon else label)
+
+    def tr(self, text):
+        return translate_text(text, self.current_language)
+
     # PAGE HEADER
     # =====================================================
 
@@ -323,108 +464,152 @@ class AymtechPro(QMainWindow):
 
         page = QWidget()
         layout = QVBoxLayout(page)
-        layout.setContentsMargins(30, 25, 30, 25)
+        layout.setContentsMargins(16, 15, 16, 15)
+        layout.setSpacing(12)
 
-        layout.addLayout(
-            self.create_page_header(
-                "Dashboard",
-                "Welcome to AYMTECH PRO Mobile Service Center."
-            )
+        top_row = QHBoxLayout()
+        top_row.setSpacing(12)
+
+        hero = QFrame()
+        hero.setObjectName("Hero")
+        hero_layout = QVBoxLayout(hero)
+        hero_layout.setContentsMargins(22, 20, 22, 20)
+
+        welcome = QLabel("مرحباً بك في")
+        welcome.setStyleSheet("font-size:17pt; font-weight:bold; color:#ffffff;")
+
+        title = QLabel("AYMEN Phone Service")
+        title.setObjectName("HeroTitle")
+
+        description = QLabel(
+            "Professional Android Repair Tool\\n"
+            "أدوات تشخيص وصيانة الهواتف المحمولة"
         )
+        description.setObjectName("HeroDescription")
+        description.setWordWrap(True)
 
-        cards_layout = QGridLayout()
-        cards_layout.setSpacing(15)
+        hero_layout.addWidget(welcome)
+        hero_layout.addWidget(title)
+        hero_layout.addWidget(description)
+        hero_layout.addStretch()
 
-        cards = [
-            ("Connected Devices", "ADB"),
-            ("ADB Status", "READY"),
-            ("Fastboot Status", "READY"),
-            ("Software Version", APP_VERSION),
-        ]
+        device_panel = QFrame()
+        device_panel.setObjectName("DevicePanel")
+        device_panel.setMinimumWidth(245)
+        device_layout = QVBoxLayout(device_panel)
+        device_layout.setContentsMargins(16, 16, 16, 16)
 
-        for index, (title, value) in enumerate(cards):
+        connected_title = QLabel("🟢  Device Connection")
+        connected_title.setStyleSheet(
+            "color:#20df83; font-size:13pt; font-weight:bold;"
+        )
+        device_layout.addWidget(connected_title)
 
-            card = QFrame()
-            card.setStyleSheet("""
-                QFrame {
-                    background-color: #111827;
-                    border: 1px solid #263247;
-                    border-radius: 10px;
-                }
-            """)
+        device_info = QLabel(
+            "No device information yet.\\n\\n"
+            "Connect an Android phone using USB debugging, "
+            "then select Refresh Devices."
+        )
+        device_info.setWordWrap(True)
+        device_info.setStyleSheet("color:#d5e8ff; line-height:1.5;")
+        device_layout.addWidget(device_info)
+        device_layout.addStretch()
 
-            card_layout = QVBoxLayout(card)
+        refresh = QPushButton("⟳  Refresh Devices")
+        refresh.setObjectName("Primary")
+        refresh.clicked.connect(self.refresh_devices)
+        device_layout.addWidget(refresh)
 
-            title_label = QLabel(title)
-            title_label.setObjectName("CardTitle")
+        top_row.addWidget(hero, 3)
+        top_row.addWidget(device_panel, 2)
+        layout.addLayout(top_row)
 
-            value_label = QLabel(value)
-            value_label.setObjectName("CardValue")
-
-            card_layout.addWidget(title_label)
-            card_layout.addWidget(value_label)
-            card_layout.addStretch()
-
-            cards_layout.addWidget(
-                card,
-                index // 2,
-                index % 2
-            )
-
-        layout.addLayout(cards_layout)
-        layout.addSpacing(20)
-
-        section = QLabel("Quick Actions")
+        section = QLabel("SERVICE TOOLS")
         section.setStyleSheet(
-            "font-size: 15pt; font-weight: bold;"
+            "color:#31baff; font-size:14pt; font-weight:bold;"
         )
         layout.addWidget(section)
 
-        actions = QHBoxLayout()
+        cards = [
+            ("🔒", "Screen Lock Service",
+             "Screen lock diagnostics and official recovery guidance.",
+             "Screen Lock Service"),
+            ("ℹ️", "Device Information",
+             "View connected phone information and device details.",
+             "Device Information"),
+            ("📱", "ADB Tools",
+             "Manage ADB connection and supported device operations.",
+             "ADB Tools"),
+            ("📦", "Firmware Center",
+             "Inspect firmware files and calculate file checksums.",
+             "Firmware Center"),
+            ("🤖", "Android Diagnostics",
+             "Battery, storage and Android device diagnostics.",
+             "Android Tools"),
+            ("⚙️", "Device Manager",
+             "Detect and manage connected mobile devices.",
+             "Device Manager"),
+        ]
 
-        refresh_button = QPushButton("Refresh Devices")
-        refresh_button.setObjectName("Primary")
-        refresh_button.clicked.connect(self.refresh_devices)
+        grid = QGridLayout()
+        grid.setSpacing(12)
 
-        tools_button = QPushButton("Check ADB / Fastboot")
-        tools_button.clicked.connect(self.check_tools)
+        for index, (icon, name, description, target) in enumerate(cards):
+            card = QFrame()
+            card.setObjectName("ToolCard")
+            card_layout = QVBoxLayout(card)
+            card_layout.setContentsMargins(13, 12, 13, 12)
+            card_layout.setSpacing(7)
 
-        adb_button = QPushButton("Open ADB Tools")
-        adb_button.clicked.connect(
-            lambda: self.navigate("ADB Tools")
+            icon_label = QLabel(icon)
+            icon_label.setObjectName("CardIcon")
+            icon_label.setAlignment(Qt.AlignCenter)
+
+            name_label = QLabel(name)
+            name_label.setObjectName("CardTitle")
+            name_label.setAlignment(Qt.AlignCenter)
+
+            desc_label = QLabel(description)
+            desc_label.setWordWrap(True)
+            desc_label.setAlignment(Qt.AlignCenter)
+            desc_label.setStyleSheet("color:#b8cce2;")
+
+            action = QPushButton("Open Tool  →")
+            action.setObjectName("CardAction")
+            action.clicked.connect(
+                lambda checked=False, t=target: self.navigate(t)
+            )
+
+            card_layout.addWidget(icon_label)
+            card_layout.addWidget(name_label)
+            card_layout.addWidget(desc_label, 1)
+            card_layout.addWidget(action)
+
+            grid.addWidget(card, index // 3, index % 3)
+
+        layout.addLayout(grid)
+
+        quick = QHBoxLayout()
+        quick_title = QLabel("Quick Actions")
+        quick_title.setStyleSheet(
+            "font-size:12pt; font-weight:bold; color:#ffffff;"
         )
+        quick.addWidget(quick_title)
+        quick.addStretch()
 
-        actions.addWidget(refresh_button)
-        actions.addWidget(tools_button)
-        actions.addWidget(adb_button)
+        check_button = QPushButton("Check ADB / Fastboot")
+        check_button.clicked.connect(self.check_tools)
+        quick.addWidget(check_button)
 
-        layout.addLayout(actions)
-        layout.addSpacing(20)
-
-        info = QLabel(
-            "AYMTECH PRO\n\n"
-            "Professional mobile servicing interface.\n"
-            "Connect an Android phone using USB debugging "
-            "to access real device information.\n\n"
-            "Demo Mode is enabled when no ADB device is detected."
+        logs_button = QPushButton("Operation Logs")
+        logs_button.clicked.connect(
+            lambda: self.navigate("Operation Logs")
         )
+        quick.addWidget(logs_button)
 
-        info.setStyleSheet("""
-            background-color: #111827;
-            border: 1px solid #263247;
-            border-radius: 10px;
-            padding: 20px;
-            color: #cbd5e1;
-        """)
-
-        layout.addWidget(info)
-        layout.addStretch()
-
+        layout.addLayout(quick)
         return page
 
-    # =====================================================
-    # DEVICE MANAGER
-    # =====================================================
 
     def create_device_manager(self):
 
@@ -1546,10 +1731,32 @@ class AymtechPro(QMainWindow):
         detect_button.clicked.connect(self.screen_lock_detect_device)
         layout.addWidget(detect_button)
 
+        refresh_button = QPushButton("Refresh Device Detection")
+        refresh_button.setCursor(Qt.PointingHandCursor)
+        refresh_button.clicked.connect(self.screen_lock_detect_device)
+        layout.addWidget(refresh_button)
+
+        security_button = QPushButton("Android Security Diagnostics")
+        security_button.setCursor(Qt.PointingHandCursor)
+        security_button.clicked.connect(self.screen_lock_security_diagnostics)
+        layout.addWidget(security_button)
+
+        lock_info_button = QPushButton("Android Lock Information")
+        lock_info_button.setCursor(Qt.PointingHandCursor)
+        lock_info_button.clicked.connect(self.screen_lock_information)
+        layout.addWidget(lock_info_button)
+
         recovery_button = QPushButton("Show Official Recovery Guidance")
         recovery_button.setCursor(Qt.PointingHandCursor)
         recovery_button.clicked.connect(self.screen_lock_recovery_guide)
         layout.addWidget(recovery_button)
+
+        self.screen_lock_status = QLabel("Status: NOT CONNECTED")
+        self.screen_lock_status.setStyleSheet(
+            "color: #f87171; font-size: 14px; font-weight: bold; "
+            "padding: 8px;"
+        )
+        layout.addWidget(self.screen_lock_status)
 
         self.screen_lock_result = QTextEdit()
         self.screen_lock_result.setReadOnly(True)
@@ -1561,18 +1768,28 @@ class AymtechPro(QMainWindow):
         layout.addStretch()
         return page
 
+
     def screen_lock_detect_device(self):
+
+        self.screen_lock_status.setText("Status: CHECKING...")
+        self.screen_lock_status.setStyleSheet(
+            "color: #facc15; font-size: 14px; font-weight: bold; padding: 8px;"
+        )
 
         try:
             ok, output = ADBTools.devices()
 
             if not ok:
+                self.screen_lock_status.setText("Status: ADB ERROR")
+                self.screen_lock_status.setStyleSheet(
+                    "color: #f87171; font-weight: bold; padding: 8px;"
+                )
                 self.screen_lock_result.setPlainText(
-                    "ADB ERROR\\n\\n" + output
+                    "ADB ERROR\n\n" + output
                 )
                 return
 
-            connected = []
+            devices = []
 
             for line in output.splitlines():
                 line = line.strip()
@@ -1582,28 +1799,298 @@ class AymtechPro(QMainWindow):
 
                 parts = line.split()
 
-                if len(parts) >= 2 and parts[1] == "device":
-                    connected.append(parts[0])
+                if len(parts) >= 2:
+                    devices.append((parts[0], parts[1]))
 
-            if not connected:
+            if not devices:
+                self.screen_lock_status.setText("Status: NOT CONNECTED")
+                self.screen_lock_status.setStyleSheet(
+                    "color: #f87171; font-weight: bold; padding: 8px;"
+                )
                 self.screen_lock_result.setPlainText(
-                    "No authorized Android device detected.\\n\\n"
-                    "Connect the phone using USB and authorize USB debugging.\\n"
-                    "A locked phone may not permit ADB access."
+                    "NO ANDROID DEVICE DETECTED\n\n"
+                    "Connect an Android phone using USB.\n"
+                    "Enable USB debugging if available."
                 )
                 return
 
-            results = ["ANDROID DEVICE DIAGNOSTICS\\n"]
+            authorized = [d for d in devices if d[1] == "device"]
+            unauthorized = [d for d in devices if d[1] == "unauthorized"]
+            offline = [d for d in devices if d[1] == "offline"]
 
-            for serial in connected:
-                results.append(ADBTools.device_info(serial))
-                results.append("\\n" + "=" * 45 + "\\n")
+            if authorized:
+                status_text = "Status: CONNECTED"
+                status_color = "#4ade80"
+            elif unauthorized:
+                status_text = "Status: UNAUTHORIZED"
+                status_color = "#facc15"
+            else:
+                status_text = "Status: OFFLINE"
+                status_color = "#f87171"
 
-            self.screen_lock_result.setPlainText("\\n".join(results))
+            self.screen_lock_status.setText(status_text)
+            self.screen_lock_status.setStyleSheet(
+                f"color: {status_color}; font-size: 14px; "
+                "font-weight: bold; padding: 8px;"
+            )
+
+            results = ["SMART ANDROID DEVICE DETECTION\n"]
+
+            for serial, status in devices:
+
+                results.append("=" * 45)
+                results.append(f"Serial: {serial}")
+                results.append(f"ADB Status: {status.upper()}")
+
+                if status != "device":
+                    results.append(
+                        "Device is not authorized for ADB diagnostics."
+                    )
+                    results.append("")
+                    continue
+
+                properties = {
+                    "Manufacturer": "ro.product.manufacturer",
+                    "Brand": "ro.product.brand",
+                    "Model": "ro.product.model",
+                    "Device": "ro.product.device",
+                    "Android Version": "ro.build.version.release",
+                    "SDK Version": "ro.build.version.sdk",
+                    "Security Patch": "ro.build.version.security_patch",
+                    "Board Platform": "ro.board.platform",
+                    "Hardware": "ro.hardware",
+                    "SoC Model": "ro.soc.model",
+                }
+
+                values = {}
+
+                for name, prop in properties.items():
+                    prop_ok, value = ADBTools.run([
+                        "-s", serial, "shell", "getprop", prop
+                    ])
+
+                    values[name] = (
+                        value.strip()
+                        if prop_ok and value.strip()
+                        else "Unavailable"
+                    )
+
+                platform = (
+                    values["Board Platform"] + " " +
+                    values["Hardware"] + " " +
+                    values["SoC Model"]
+                ).lower()
+
+                if any(x in platform for x in ["qcom", "qualcomm"]):
+                    chipset = "Qualcomm Snapdragon family (detected)"
+                elif "mediatek" in platform or "mt" in platform:
+                    chipset = "MediaTek family (possible)"
+                elif "exynos" in platform:
+                    chipset = "Samsung Exynos family (detected)"
+                elif any(x in platform for x in ["kirin", "hisilicon"]):
+                    chipset = "Huawei Kirin family (detected)"
+                elif any(x in platform for x in ["unisoc", "spreadtrum"]):
+                    chipset = "Unisoc family (detected)"
+                elif "tensor" in platform:
+                    chipset = "Google Tensor family (detected)"
+                else:
+                    chipset = "Unknown / Not confirmed"
+
+                results.append("\nDEVICE INFORMATION")
+
+                for name, value in values.items():
+                    results.append(f"{name}: {value}")
+
+                results.append(f"\nPROCESSOR FAMILY: {chipset}")
+                results.append(
+                    "\nDIAGNOSTIC LIMITATIONS:\n"
+                    "ADB only provides information available to an "
+                    "authorized debugging connection.\n"
+                    "A locked phone may not authorize ADB access.\n"
+                    "Processor detection is based on Android properties "
+                    "and is not a hardware-level verification."
+                )
+                results.append("")
+
+            self.screen_lock_result.setPlainText("\n".join(results))
+
+        except Exception as e:
+            self.screen_lock_status.setText("Status: ERROR")
+            self.screen_lock_status.setStyleSheet(
+                "color: #f87171; font-weight: bold; padding: 8px;"
+            )
+            self.screen_lock_result.setPlainText(
+                f"Device detection error:\n{e}"
+            )
+
+
+    def screen_lock_security_diagnostics(self):
+
+        try:
+            ok, output = ADBTools.devices()
+
+            if not ok:
+                self.screen_lock_result.setPlainText(
+                    "ADB ERROR\n\n" + output
+                )
+                return
+
+            devices = []
+
+            for line in output.splitlines():
+                parts = line.strip().split()
+
+                if len(parts) >= 2 and parts[1] == "device":
+                    devices.append(parts[0])
+
+            if not devices:
+                self.screen_lock_result.setPlainText(
+                    "No authorized Android device detected.\n\n"
+                    "Connect a device and authorize USB debugging."
+                )
+                return
+
+            results = ["ANDROID SECURITY DIAGNOSTICS\n"]
+
+            properties = {
+                "USB Debugging Setting": "service.adb.tcp.port",
+                "Bootloader Lock": "ro.boot.flash.locked",
+                "Verified Boot State": "ro.boot.verifiedbootstate",
+                "Bootloader State": "ro.boot.vbmeta.device_state",
+                "Android Security Patch": "ro.build.version.security_patch",
+                "Build Type": "ro.build.type",
+                "SELinux Status": "ro.boot.selinux",
+            }
+
+            for serial in devices:
+
+                results.append("=" * 45)
+                results.append(f"Device Serial: {serial}")
+
+                for name, prop in properties.items():
+
+                    prop_ok, value = ADBTools.run([
+                        "-s", serial, "shell", "getprop", prop
+                    ])
+
+                    value = value.strip() if prop_ok else ""
+                    results.append(
+                        f"{name}: {value if value else 'Unavailable / Not exposed'}"
+                    )
+
+                root_ok, root_output = ADBTools.run([
+                    "-s", serial, "shell", "su", "-c", "id"
+                ], timeout=10)
+
+                if root_ok and "uid=0" in root_output:
+                    root_status = "Root access available"
+                else:
+                    root_status = "Root access not confirmed"
+
+                results.append(f"Root Indicator: {root_status}")
+
+                results.append(
+                    "\nNOTES:\n"
+                    "These values are read-only diagnostic indicators.\n"
+                    "Unavailable properties do not prove that a device "
+                    "is locked or secure.\n"
+                    "Root detection is not conclusive on every Android device."
+                )
+
+            self.screen_lock_result.setPlainText("\n".join(results))
 
         except Exception as e:
             self.screen_lock_result.setPlainText(
-                f"Device detection error:\\n{e}"
+                f"Security diagnostics error:\n{e}"
+            )
+
+
+    def screen_lock_information(self):
+
+        try:
+            ok, output = ADBTools.devices()
+
+            if not ok:
+                self.screen_lock_result.setPlainText(
+                    "ADB ERROR\n\n" + output
+                )
+                return
+
+            devices = []
+
+            for line in output.splitlines():
+                parts = line.strip().split()
+
+                if len(parts) >= 2 and parts[1] == "device":
+                    devices.append(parts[0])
+
+            if not devices:
+                self.screen_lock_result.setPlainText(
+                    "No authorized Android device detected."
+                )
+                return
+
+            results = ["ANDROID LOCK INFORMATION\n"]
+
+            for serial in devices:
+
+                results.append("=" * 45)
+                results.append(f"Device: {serial}")
+
+                lock_ok, lock_output = ADBTools.run([
+                    "-s", serial,
+                    "shell", "dumpsys", "window"
+                ], timeout=20)
+
+                lock_state = "UNKNOWN"
+
+                if lock_ok:
+                    text = lock_output.lower()
+
+                    if "mshowinglockscreen=true" in text:
+                        lock_state = "LOCKED (reported by WindowManager)"
+                    elif "mshowinglockscreen=false" in text:
+                        lock_state = "NOT SHOWING LOCK SCREEN"
+
+                results.append(f"Screen Lock State: {lock_state}")
+
+                keyguard_ok, keyguard_output = ADBTools.run([
+                    "-s", serial,
+                    "shell", "dumpsys", "trust"
+                ], timeout=20)
+
+                if keyguard_ok:
+                    trust_text = keyguard_output.lower()
+
+                    if "device locked" in trust_text:
+                        results.append(
+                            "Trust Service: Device reports locked"
+                        )
+                    elif "device unlocked" in trust_text:
+                        results.append(
+                            "Trust Service: Device reports unlocked"
+                        )
+                    else:
+                        results.append(
+                            "Trust Service: State not confirmed"
+                        )
+                else:
+                    results.append(
+                        "Trust Service: Information unavailable"
+                    )
+
+                results.append(
+                    "\nIMPORTANT:\n"
+                    "ADB access does not prove that the screen is unlocked.\n"
+                    "WindowManager output may vary across Android versions.\n"
+                    "UNKNOWN means the lock state could not be verified."
+                )
+
+            self.screen_lock_result.setPlainText("\n".join(results))
+
+        except Exception as e:
+            self.screen_lock_result.setPlainText(
+                f"Lock information error:\n{e}"
             )
 
     def screen_lock_recovery_guide(self):
