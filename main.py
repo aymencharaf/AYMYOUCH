@@ -3,14 +3,16 @@ from tools.qualcomm_tools import QualcommTools
 from tools.mediatek_tools import MediaTekTools
 from tools.android_tools import AndroidTools
 from tools.samsung_tools import SamsungTools
+from PySide6.QtGui import QImage, QPixmap
 import sys
 import shutil
 import subprocess
 from datetime import datetime
 
-from PySide6.QtCore import Qt, QSettings
+from PySide6.QtCore import Qt, QSettings, QTimer
 from PySide6.QtWidgets import (
     QApplication,
+    QScrollArea,
     QMainWindow,
     QWidget,
     QVBoxLayout,
@@ -231,7 +233,14 @@ class AymtechPro(QMainWindow):
         self.adb_device_combo = None
         self.adb_status_label = None
         self.adb_output = None
-
+        # Live Phone Screen
+        self.phone_screen_label = None
+        self.phone_screen_status = None
+        self.phone_screen_timer = QTimer(self)
+        self.phone_screen_timer.setInterval(700)
+        self.phone_screen_timer.timeout.connect(
+            self.update_phone_screen
+        )
         self.navigation_buttons = []
 
         self.settings = QSettings("AYMTECH", "AYMYOUCH")
@@ -294,7 +303,7 @@ class AymtechPro(QMainWindow):
         update_button.setObjectName("HeaderButton")
         update_button.clicked.connect(
             lambda: QMessageBox.information(
-                self, "Update", "The update service is not configured yet."
+                self, self.tr("Update"), self.tr("The update service is not configured yet.")
             )
         )
         header_layout.addWidget(update_button)
@@ -303,7 +312,7 @@ class AymtechPro(QMainWindow):
         about_button.setObjectName("HeaderButton")
         about_button.clicked.connect(
             lambda: QMessageBox.information(
-                self, "About",
+                self, self.tr("About"),
                 f"{APP_NAME}\\nProfessional Mobile Service Tool\\nVersion {APP_VERSION}"
             )
         )
@@ -332,6 +341,7 @@ class AymtechPro(QMainWindow):
             ("Device Manager", self.create_device_manager),
             ("Device Information", self.create_device_information),
             ("ADB Tools", self.create_adb_page),
+            ("Live Phone Screen", self.create_phone_screen_page),
             ("Android Tools", self.create_android_diagnostics_page),
             ("Screen Lock Service", self.create_screen_lock_page),
             ("Samsung Tools", self.create_samsung_tools_page),
@@ -355,9 +365,10 @@ class AymtechPro(QMainWindow):
             "Firmware Center": "📦",
             "iOS Tools": "🍎",
             "Operation Logs": "📄",
+            "Live Phone Screen": "▣",
         }
 
-        for title, creator in navigation:
+        for title
             button = QPushButton(title)
             button.setMinimumHeight(43)
             button.setCheckable(True)
@@ -402,6 +413,7 @@ class AymtechPro(QMainWindow):
 
         root.addWidget(footer)
 
+        self._collect_translatable_widgets()
         self.apply_language()
         self.navigate("Dashboard")
 
@@ -416,6 +428,47 @@ class AymtechPro(QMainWindow):
         self.settings.setValue("language", language)
         self.apply_language()
 
+    def _collect_translatable_widgets(self):
+        self._translatable_widgets = []
+
+        for widget in self.findChildren(QWidget):
+
+            if isinstance(widget, QPushButton):
+                original = widget.text()
+                if original.strip():
+                    self._translatable_widgets.append(
+                        ("text", widget, original)
+                    )
+
+            elif isinstance(widget, QLabel):
+                original = widget.text()
+                if original.strip():
+                    self._translatable_widgets.append(
+                        ("text", widget, original)
+                    )
+
+            elif isinstance(widget, QLineEdit):
+                original = widget.placeholderText()
+                if original:
+                    self._translatable_widgets.append(
+                        ("placeholder", widget, original)
+                    )
+
+            elif isinstance(widget, QTextEdit):
+                original = widget.placeholderText()
+                if original:
+                    self._translatable_widgets.append(
+                        ("placeholder", widget, original)
+                    )
+
+            elif isinstance(widget, QTableWidget):
+                for column in range(widget.columnCount()):
+                    item = widget.horizontalHeaderItem(column)
+                    if item and item.text().strip():
+                        self._translatable_widgets.append(
+                            ("table_header", item, item.text())
+                        )
+
     def apply_language(self):
         language = self.current_language
 
@@ -424,10 +477,19 @@ class AymtechPro(QMainWindow):
             else Qt.LeftToRight
         )
 
-        self.language_label.setText(
-            {"en": "Language", "fr": "Langue", "ar": "اللغة"}[language]
-        )
+        for kind, widget, original in self._translatable_widgets:
+            translated = translate_text(original, language)
 
+            if kind == "text":
+                widget.setText(translated)
+
+            elif kind == "placeholder":
+                widget.setPlaceholderText(translated)
+
+            elif kind == "table_header":
+                widget.setText(translated)
+
+        # Keep navigation identifiers in English internally.
         for title, button in self.navigation_buttons:
             icon = getattr(self, "nav_icons", {}).get(title, "")
             label = translate_text(title, language)
@@ -816,10 +878,12 @@ class AymtechPro(QMainWindow):
         if not serial:
             QMessageBox.warning(
                 self,
-                "No Device",
-                "No authorized Android device is connected.\n\n"
-                "Connect your phone, enable USB Debugging, "
-                "and authorize this computer."
+                self.tr("No Device"),
+                self.tr(
+                    "No authorized Android device is connected.\n\n"
+                    "Connect your phone, enable USB Debugging, "
+                    "and authorize this computer."
+                )
             )
             return None
 
@@ -984,9 +1048,8 @@ class AymtechPro(QMainWindow):
 
         answer = QMessageBox.question(
             self,
-            "Confirm Reboot",
-            f"Are you sure you want to reboot the device "
-            f"into {mode_names[mode]}?",
+            self.tr("Confirm Reboot"),
+            self.tr("Are you sure you want to reboot the device into {mode}?").format(mode=self.tr(mode_names[mode])),
             QMessageBox.Yes | QMessageBox.No
         )
 
@@ -1017,9 +1080,9 @@ class AymtechPro(QMainWindow):
 
         apk_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Select APK File",
+            self.tr("Select APK File"),
             "",
-            "Android APK (*.apk)"
+            self.tr("Android APK (*.apk)")
         )
 
         if not apk_path:
@@ -1027,9 +1090,8 @@ class AymtechPro(QMainWindow):
 
         answer = QMessageBox.question(
             self,
-            "Install APK",
-            f"Install this application on the selected device?\n\n"
-            f"{apk_path}",
+            self.tr("Install APK"),
+            self.tr("Install this application on the selected device?\n\n{path}").format(path=apk_path),
             QMessageBox.Yes | QMessageBox.No
         )
 
@@ -1060,9 +1122,9 @@ class AymtechPro(QMainWindow):
 
         destination, _ = QFileDialog.getSaveFileName(
             self,
-            "Save Device Screenshot",
+            self.tr("Save Device Screenshot"),
             "AYMTECH_screenshot.png",
-            "PNG Image (*.png)"
+            self.tr("PNG Image (*.png)")
         )
 
         if not destination:
@@ -1086,8 +1148,8 @@ class AymtechPro(QMainWindow):
 
             QMessageBox.information(
                 self,
-                "Screenshot Saved",
-                f"Screenshot saved successfully:\n{destination}"
+                self.tr("Screenshot Saved"),
+                self.tr("Screenshot saved successfully:\n{path}").format(path=destination)
             )
 
     # =====================================================
@@ -1263,8 +1325,8 @@ class AymtechPro(QMainWindow):
         if not serial:
             QMessageBox.warning(
                 self,
-                "No Device",
-                "Please connect and select a device."
+                self.tr("No Device"),
+                self.tr("Please connect and select a device.")
             )
             return None
 
@@ -1384,8 +1446,8 @@ class AymtechPro(QMainWindow):
         if not serial:
             QMessageBox.warning(
                 self,
-                "No Device",
-                "Please connect and select a device."
+                self.tr("No Device"),
+                self.tr("Please connect and select a device.")
             )
             return None
 
@@ -1499,8 +1561,8 @@ class AymtechPro(QMainWindow):
 
         if not serial:
             QMessageBox.warning(
-                self, "No Device",
-                "Please connect and select a device."
+                self, self.tr("No Device"),
+                self.tr("Please connect and select a device.")
             )
             return None
 
@@ -1567,7 +1629,7 @@ class AymtechPro(QMainWindow):
         layout.addWidget(self.firmware_path_label)
 
         buttons = [
-            ("Select Firmware File", self.select_firmware_file),
+            (self.tr("Select Firmware File"), self.select_firmware_file),
             ("File Information", self.firmware_file_information),
             ("Calculate SHA-256", self.firmware_calculate_sha256),
             ("Scan Firmware Folder", self.firmware_scan_folder),
@@ -1589,9 +1651,9 @@ class AymtechPro(QMainWindow):
 
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Select Firmware File",
+            self.tr("Select Firmware File"),
             "",
-            "Firmware Files (*.zip *.img *.bin *.tar *.md5 *.mbn "
+            self.tr("Firmware Files") + " (*.zip *.img *.bin *.tar *.md5 *.mbn "
             "*.xml *.ofp *.kdz *.ftf *.ipsw *.ops *.pac *.br *.dat "
             "*.lz4);;All Files (*)"
         )
@@ -1609,7 +1671,7 @@ class AymtechPro(QMainWindow):
 
         if not self.firmware_file_path:
             QMessageBox.warning(
-                self, "No File", "Please select a firmware file first."
+                self, self.tr("No File"), self.tr("Please select a firmware file first.")
             )
             return
 
@@ -1622,7 +1684,7 @@ class AymtechPro(QMainWindow):
 
         if not self.firmware_file_path:
             QMessageBox.warning(
-                self, "No File", "Please select a firmware file first."
+                self, self.tr("No File"), self.tr("Please select a firmware file first.")
             )
             return
 
@@ -1644,7 +1706,7 @@ class AymtechPro(QMainWindow):
     def firmware_scan_folder(self):
 
         folder = QFileDialog.getExistingDirectory(
-            self, "Select Firmware Folder"
+            self, self.tr("Select Firmware Folder")
         )
 
         if not folder:
@@ -1715,15 +1777,18 @@ class AymtechPro(QMainWindow):
         """)
         layout.addWidget(info)
 
-        brand_label = QLabel("Select device brand:")
+        brand_label = QLabel(self.tr("Select device brand:"))
         layout.addWidget(brand_label)
 
         self.screen_lock_brand = QComboBox()
-        self.screen_lock_brand.addItems([
+
+        for brand in [
             "Samsung", "Xiaomi", "Redmi", "POCO",
             "OPPO", "Realme", "Huawei", "Motorola",
             "Google Pixel", "Other Android"
-        ])
+        ]:
+            self.screen_lock_brand.addItem(self.tr(brand), brand)
+
         layout.addWidget(self.screen_lock_brand)
 
         detect_button = QPushButton("Detect Connected Device")
@@ -1761,21 +1826,16 @@ class AymtechPro(QMainWindow):
         self.screen_lock_result = QTextEdit()
         self.screen_lock_result.setReadOnly(True)
         self.screen_lock_result.setPlaceholderText(
-            "Device information and recovery guidance will appear here..."
+            self.tr(
+                "Device information and recovery guidance will appear here..."
+            )
         )
         layout.addWidget(self.screen_lock_result)
 
         layout.addStretch()
         return page
 
-
     def screen_lock_detect_device(self):
-
-        self.screen_lock_status.setText("Status: CHECKING...")
-        self.screen_lock_status.setStyleSheet(
-            "color: #facc15; font-size: 14px; font-weight: bold; padding: 8px;"
-        )
-
         try:
             ok, output = ADBTools.devices()
 
@@ -2223,8 +2283,8 @@ class AymtechPro(QMainWindow):
         if not serial:
             QMessageBox.warning(
                 self,
-                "No Device",
-                "Please connect and select an Android device."
+                self.tr("No Device"),
+                self.tr("Please connect and select an Android device.")
             )
             return None
 
@@ -2376,7 +2436,7 @@ class AymtechPro(QMainWindow):
 
         QMessageBox.information(
             self,
-            "Tool Status",
+            self.tr("Tool Status"),
             "\n\n".join(results)
         )
 

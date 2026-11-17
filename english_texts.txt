@@ -1,0 +1,413 @@
+40:APP_NAME = "AYMTECH PRO"
+166:            encoding="utf-8",
+167:            errors="replace"
+178:        return False, f"Command not found: {command[0]}"
+181:        return False, "Command timed out."
+233:        sidebar.setObjectName("Sidebar")
+240:        logo = QLabel("AYMTECH PRO")
+241:        logo.setObjectName("Logo")
+244:        subtitle = QLabel("MOBILE SERVICE CENTER")
+245:        subtitle.setObjectName("Subtitle")
+253:            ("Dashboard", self.create_dashboard),
+254:            ("Device Manager", self.create_device_manager),
+255:            ("Device Information", self.create_device_information),
+256:            ("ADB Tools", self.create_adb_page),
+257:            ("Android Tools", self.create_android_diagnostics_page),
+258:            ("Screen Lock Service", self.create_screen_lock_page),
+259:            ("Samsung Tools", self.create_samsung_tools_page),
+260:            ("Qualcomm Tools", self.create_qualcomm_tools_page),
+261:           ("MediaTek Tools", self.create_mediatek_tools_page),
+262:            ("Firmware Center", self.create_firmware_center_page),
+263:            ("iOS Tools", lambda: self.create_tool_page("iOS Tools")),
+264:            ("Operation Logs", self.create_logs_page),
+286:            f"AYMTECH PRO v{APP_VERSION}\n"
+287:            "Android Service Toolkit"
+289:        version.setObjectName("Subtitle")
+295:        self.navigate("Dashboard")
+306:        title_label.setObjectName("PageTitle")
+311:            desc.setStyleSheet("color: #94a3b8;")
+330:                "Dashboard",
+331:                "Welcome to AYMTECH PRO Mobile Service Center."
+339:            ("Connected Devices", "ADB"),
+340:            ("ADB Status", "READY"),
+341:            ("Fastboot Status", "READY"),
+342:            ("Software Version", APP_VERSION),
+359:            title_label.setObjectName("CardTitle")
+362:            value_label.setObjectName("CardValue")
+377:        section = QLabel("Quick Actions")
+379:            "font-size: 15pt; font-weight: bold;"
+385:        refresh_button = QPushButton("Refresh Devices")
+386:        refresh_button.setObjectName("Primary")
+389:        tools_button = QPushButton("Check ADB / Fastboot")
+392:        adb_button = QPushButton("Open ADB Tools")
+394:            lambda: self.navigate("ADB Tools")
+405:            "AYMTECH PRO\n\n"
+406:            "Professional mobile servicing interface.\n"
+407:            "Connect an Android phone using USB debugging "
+408:            "to access real device information.\n\n"
+409:            "Demo Mode is enabled when no ADB device is detected."
+437:                "Device Manager",
+438:                "Detect and manage Android devices."
+446:            "Search device serial number..."
+453:        refresh_button = QPushButton("Refresh Devices")
+454:        refresh_button.setObjectName("Primary")
+465:            "Serial Number",
+466:            "Status",
+467:            "Device Information"
+489:            "Demo devices are simulated and cannot execute ADB commands."
+491:        note.setStyleSheet("color: #94a3b8;")
+508:                "Device Information",
+509:                "Read Android device properties."
+517:            "Select a device to display its information."
+537:                "ADB Tools",
+538:                "Android Debug Bridge - Device servicing tools."
+545:        device_label = QLabel("Connected Device:")
+550:        refresh_button = QPushButton("Refresh")
+551:        refresh_button.setObjectName("Primary")
+563:            "Status: Waiting for device..."
+566:            "color: #fbbf24; font-weight: bold;"
+576:            ("Device Information", self.adb_device_information),
+577:            ("Reboot System", lambda: self.adb_reboot("system")),
+578:            ("Reboot Recovery", lambda: self.adb_reboot("recovery")),
+579:            ("Reboot Bootloader", lambda: self.adb_reboot("bootloader")),
+580:            ("Install APK", self.adb_install_apk),
+581:            ("Take Screenshot", self.adb_screenshot),
+582:            ("Installed Apps", self.adb_list_apps),
+583:            ("Battery Information", self.adb_battery),
+584:            ("Storage Information", self.adb_storage),
+601:        output_title = QLabel("ADB Operation Output")
+603:            "font-size: 13pt; font-weight: bold;"
+611:            "ADB operation results will appear here..."
+634:                "No Device",
+635:                "No authorized Android device is connected.\n\n"
+636:                "Connect your phone, enable USB Debugging, "
+637:                "and authorize this computer."
+657:                "ADB not installed",
+662:                "Status: ADB NOT FOUND"
+666:                "color: #f87171; font-weight: bold;"
+687:                    if state == "device":
+690:                    elif state == "unauthorized":
+702:                f"Status: {len(authorized)} authorized device(s) connected."
+706:                "color: #4ade80; font-weight: bold;"
+710:                "ADB device list refreshed."
+716:                "Device unauthorized",
+721:                "Status: Authorize USB debugging on your phone."
+725:                "color: #fbbf24; font-weight: bold;"
+731:                "No authorized device connected",
+736:                "Status: No real Android device detected."
+740:                "color: #fbbf24; font-weight: bold;"
+743:        self.log("ADB device list refreshed.")
+753:            f"Status: {'SUCCESS' if ok else 'FAILED'}\n\n"
+778:            "DEVICE INFORMATION",
+795:            "system": "Normal System",
+796:            "recovery": "Recovery",
+797:            "bootloader": "Bootloader",
+802:            "Confirm Reboot",
+803:            f"Are you sure you want to reboot the device "
+804:            f"into {mode_names[mode]}?",
+817:            f"REBOOT {mode.upper()}",
+819:            output or "Reboot command sent."
+835:            "Select APK File",
+837:            "Android APK (*.apk)"
+845:            "Install APK",
+846:            f"Install this application on the selected device?\n\n"
+860:            "INSTALL APK",
+878:            "Save Device Screenshot",
+879:            "AYMTECH_screenshot.png",
+880:            "PNG Image (*.png)"
+895:            "SCREENSHOT",
+904:                "Screenshot Saved",
+905:                f"Screenshot saved successfully:\n{destination}"
+922:            "INSTALLED APPLICATIONS",
+941:            "BATTERY INFORMATION",
+960:            "STORAGE INFORMATION",
+984:            "This module is prepared for future integration.\n\n"
+985:            "Available foundations:\n"
+990:            "Additional authorized servicing features "
+991:            "will be added in future versions."
+1018:                "Samsung Tools",
+1019:                "Samsung device diagnostics and firmware information."
+1025:        layout.addWidget(QLabel("Connected Device"))
+1028:        refresh_button = QPushButton("Refresh Devices")
+1033:            ("Check Samsung Device", self.samsung_check_device),
+1034:            ("Device Information", self.samsung_device_information),
+1035:            ("Firmware Information", self.samsung_firmware_information),
+1036:            ("Connection Check", self.samsung_connection_check),
+1041:            button.setObjectName("Primary")
+1066:            if len(parts) >= 2 and parts[1] == "device":
+1071:                "No authorized Android devices found."
+1081:                "No Device",
+1082:                "Please connect and select a device."
+1139:                "Qualcomm Tools",
+1140:                "Qualcomm chipset diagnostics and device information."
+1146:        layout.addWidget(QLabel("Connected Device"))
+1149:        refresh_button = QPushButton("Refresh Devices")
+1154:            ("Check Qualcomm Device", self.qualcomm_check_device),
+1155:            ("Device Information", self.qualcomm_device_information),
+1156:            ("Firmware Information", self.qualcomm_firmware_information),
+1157:            ("Connection Check", self.qualcomm_connection_check),
+1162:            button.setObjectName("Primary")
+1187:            if len(parts) >= 2 and parts[1] == "device":
+1192:                "No authorized Android devices found."
+1202:                "No Device",
+1203:                "Please connect and select a device."
+1258:                "MediaTek Tools",
+1259:                "MediaTek chipset diagnostics and device information."
+1265:        layout.addWidget(QLabel("Connected Device"))
+1268:        refresh_button = QPushButton("Refresh Devices")
+1273:            ("Check MediaTek Device", self.mediatek_check_device),
+1274:            ("Device Information", self.mediatek_device_information),
+1275:            ("Firmware Information", self.mediatek_firmware_information),
+1276:            ("Connection Check", self.mediatek_connection_check),
+1281:            button.setObjectName("Primary")
+1303:            if len(parts) >= 2 and parts[1] == "device":
+1308:                "No authorized Android devices found."
+1317:                self, "No Device",
+1318:                "Please connect and select a device."
+1373:                "Firmware Center",
+1374:                "Manage firmware files and verify file integrity."
+1380:        self.firmware_path_label = QLabel("No firmware file selected")
+1385:            ("Select Firmware File", self.select_firmware_file),
+1386:            ("File Information", self.firmware_file_information),
+1387:            ("Calculate SHA-256", self.firmware_calculate_sha256),
+1388:            ("Scan Firmware Folder", self.firmware_scan_folder),
+1393:            button.setObjectName("Primary")
+1407:            "Select Firmware File",
+1409:            "Firmware Files (*.zip *.img *.bin *.tar *.md5 *.mbn "
+1420:            "Firmware file selected successfully."
+1427:                self, "No File", "Please select a firmware file first."
+1440:                self, "No File", "Please select a firmware file first."
+1451:                f"File: {self.firmware_file_path}\n"
+1452:                f"SHA-256: {output}\n\n"
+1453:                "Compare this value with the checksum from "
+1454:                "the official firmware source."
+1462:            self, "Select Firmware Folder"
+1476:                "No recognized firmware files found in this folder."
+1483:            size_mb = item["size"] / (1024 * 1024)
+1505:                "Screen Lock Service",
+1506:                "Android device access and official recovery assistant."
+1511:            "ANDROID SCREEN LOCK SERVICE\n\n"
+1512:            "This module helps technicians identify Android devices "
+1513:            "and guide customers through official account recovery.\n\n"
+1514:            "Available operations:\n"
+1519:            "Important: This tool does not bypass screen locks "
+1520:            "or remove device security."
+1533:        brand_label = QLabel("Select device brand:")
+1538:            "Samsung", "Xiaomi", "Redmi", "POCO",
+1539:            "OPPO", "Realme", "Huawei", "Motorola",
+1540:            "Google Pixel", "Other Android"
+1544:        detect_button = QPushButton("Detect Connected Device")
+1549:        refresh_button = QPushButton("Refresh Device Detection")
+1554:        security_button = QPushButton("Android Security Diagnostics")
+1559:        lock_info_button = QPushButton("Android Lock Information")
+1564:        recovery_button = QPushButton("Show Official Recovery Guidance")
+1569:        self.screen_lock_status = QLabel("Status: NOT CONNECTED")
+1571:            "color: #f87171; font-size: 14px; font-weight: bold; "
+1572:            "padding: 8px;"
+1579:            "Device information and recovery guidance will appear here..."
+1589:        self.screen_lock_status.setText("Status: CHECKING...")
+1591:            "color: #facc15; font-size: 14px; font-weight: bold; padding: 8px;"
+1598:                self.screen_lock_status.setText("Status: ADB ERROR")
+1600:                    "color: #f87171; font-weight: bold; padding: 8px;"
+1603:                    "ADB ERROR\n\n" + output
+1612:                if not line or line.startswith("List of devices"):
+1621:                self.screen_lock_status.setText("Status: NOT CONNECTED")
+1623:                    "color: #f87171; font-weight: bold; padding: 8px;"
+1626:                    "NO ANDROID DEVICE DETECTED\n\n"
+1627:                    "Connect an Android phone using USB.\n"
+1628:                    "Enable USB debugging if available."
+1632:            authorized = [d for d in devices if d[1] == "device"]
+1633:            unauthorized = [d for d in devices if d[1] == "unauthorized"]
+1634:            offline = [d for d in devices if d[1] == "offline"]
+1637:                status_text = "Status: CONNECTED"
+1640:                status_text = "Status: UNAUTHORIZED"
+1643:                status_text = "Status: OFFLINE"
+1648:                f"color: {status_color}; font-size: 14px; "
+1649:                "font-weight: bold; padding: 8px;"
+1652:            results = ["SMART ANDROID DEVICE DETECTION\n"]
+1657:                results.append(f"Serial: {serial}")
+1658:                results.append(f"ADB Status: {status.upper()}")
+1660:                if status != "device":
+1662:                        "Device is not authorized for ADB diagnostics."
+1668:                    "Manufacturer": "ro.product.manufacturer",
+1669:                    "Brand": "ro.product.brand",
+1670:                    "Model": "ro.product.model",
+1671:                    "Device": "ro.product.device",
+1672:                    "Android Version": "ro.build.version.release",
+1673:                    "SDK Version": "ro.build.version.sdk",
+1674:                    "Security Patch": "ro.build.version.security_patch",
+1675:                    "Board Platform": "ro.board.platform",
+1676:                    "Hardware": "ro.hardware",
+1677:                    "SoC Model": "ro.soc.model",
+1684:                        "-s", serial, "shell", "getprop", prop
+1690:                        else "Unavailable"
+1694:                    values["Board Platform"] + " " +
+1695:                    values["Hardware"] + " " +
+1696:                    values["SoC Model"]
+1699:                if any(x in platform for x in ["qcom", "qualcomm"]):
+1700:                    chipset = "Qualcomm Snapdragon family (detected)"
+1701:                elif "mediatek" in platform or "mt" in platform:
+1702:                    chipset = "MediaTek family (possible)"
+1703:                elif "exynos" in platform:
+1704:                    chipset = "Samsung Exynos family (detected)"
+1705:                elif any(x in platform for x in ["kirin", "hisilicon"]):
+1706:                    chipset = "Huawei Kirin family (detected)"
+1707:                elif any(x in platform for x in ["unisoc", "spreadtrum"]):
+1708:                    chipset = "Unisoc family (detected)"
+1709:                elif "tensor" in platform:
+1710:                    chipset = "Google Tensor family (detected)"
+1712:                    chipset = "Unknown / Not confirmed"
+1722:                    "ADB only provides information available to an "
+1723:                    "authorized debugging connection.\n"
+1724:                    "A locked phone may not authorize ADB access.\n"
+1725:                    "Processor detection is based on Android properties "
+1726:                    "and is not a hardware-level verification."
+1733:            self.screen_lock_status.setText("Status: ERROR")
+1735:                "color: #f87171; font-weight: bold; padding: 8px;"
+1738:                f"Device detection error:\n{e}"
+1749:                    "ADB ERROR\n\n" + output
+1758:                if len(parts) >= 2 and parts[1] == "device":
+1763:                    "No authorized Android device detected.\n\n"
+1764:                    "Connect a device and authorize USB debugging."
+1768:            results = ["ANDROID SECURITY DIAGNOSTICS\n"]
+1771:                "USB Debugging Setting": "service.adb.tcp.port",
+1772:                "Bootloader Lock": "ro.boot.flash.locked",
+1773:                "Verified Boot State": "ro.boot.verifiedbootstate",
+1774:                "Bootloader State": "ro.boot.vbmeta.device_state",
+1775:                "Android Security Patch": "ro.build.version.security_patch",
+1776:                "Build Type": "ro.build.type",
+1777:                "SELinux Status": "ro.boot.selinux",
+1783:                results.append(f"Device Serial: {serial}")
+1788:                        "-s", serial, "shell", "getprop", prop
+1797:                    "-s", serial, "shell", "su", "-c", "id"
+1800:                if root_ok and "uid=0" in root_output:
+1801:                    root_status = "Root access available"
+1803:                    root_status = "Root access not confirmed"
+1805:                results.append(f"Root Indicator: {root_status}")
+1809:                    "These values are read-only diagnostic indicators.\n"
+1810:                    "Unavailable properties do not prove that a device "
+1811:                    "is locked or secure.\n"
+1812:                    "Root detection is not conclusive on every Android device."
+1819:                f"Security diagnostics error:\n{e}"
+1830:                    "ADB ERROR\n\n" + output
+1839:                if len(parts) >= 2 and parts[1] == "device":
+1844:                    "No authorized Android device detected."
+1848:            results = ["ANDROID LOCK INFORMATION\n"]
+1853:                results.append(f"Device: {serial}")
+1857:                    "shell", "dumpsys", "window"
+1860:                lock_state = "UNKNOWN"
+1865:                    if "mshowinglockscreen=true" in text:
+1866:                        lock_state = "LOCKED (reported by WindowManager)"
+1867:                    elif "mshowinglockscreen=false" in text:
+1868:                        lock_state = "NOT SHOWING LOCK SCREEN"
+1870:                results.append(f"Screen Lock State: {lock_state}")
+1874:                    "shell", "dumpsys", "trust"
+1880:                    if "device locked" in trust_text:
+1882:                            "Trust Service: Device reports locked"
+1884:                    elif "device unlocked" in trust_text:
+1886:                            "Trust Service: Device reports unlocked"
+1890:                            "Trust Service: State not confirmed"
+1894:                        "Trust Service: Information unavailable"
+1899:                    "ADB access does not prove that the screen is unlocked.\n"
+1900:                    "WindowManager output may vary across Android versions.\n"
+1901:                    "UNKNOWN means the lock state could not be verified."
+1908:                f"Lock information error:\n{e}"
+1916:            "Samsung":
+1917:                "Use Samsung's official support and account recovery "
+1918:                "options. A factory reset may erase user data.",
+1919:            "Xiaomi":
+1920:                "Use Xiaomi Account recovery and official support. "
+1921:                "Account verification may be required.",
+1922:            "Redmi":
+1923:                "Use Xiaomi Account recovery and official support. "
+1924:                "Account verification may be required.",
+1925:            "POCO":
+1926:                "Use Xiaomi Account recovery and official support. "
+1927:                "Account verification may be required.",
+1928:            "OPPO":
+1929:                "Contact OPPO official support with proof of ownership.",
+1930:            "Realme":
+1931:                "Contact realme official support with proof of ownership.",
+1932:            "Huawei":
+1933:                "Use Huawei ID recovery and official support.",
+1934:            "Motorola":
+1935:                "Use Google's official Android recovery guidance "
+1936:                "or Motorola support.",
+1937:            "Google Pixel":
+1938:                "Use Google's official account recovery and Pixel support.",
+1939:            "Other Android":
+1940:                "Identify the exact model and contact its manufacturer's "
+1941:                "official support."
+1945:            f"OFFICIAL RECOVERY GUIDANCE\n\n"
+1946:            f"Brand: {brand}\n\n"
+1948:            "WARNING:\n"
+1949:            "A factory reset can erase personal data and may still "
+1950:            "require the previously synchronized Google account "
+1951:            "after reset (Factory Reset Protection).\n\n"
+1952:            "Always obtain customer authorization and confirm "
+1953:            "data backup before any reset."
+1968:                "Android Tools",
+1969:                "Android device diagnostics and servicing."
+1975:        refresh_button = QPushButton("Refresh Devices")
+1980:        layout.addWidget(QLabel("Connected Android Device"))
+1985:            ("Full Diagnostic", self.android_full_diagnostic),
+1986:            ("Device Information", self.android_device_information),
+1987:            ("Battery Health", self.android_battery_health),
+1988:            ("Storage Analysis", self.android_storage_analysis),
+1989:            ("Installed Apps", self.android_installed_apps),
+1994:            button.setObjectName("Primary")
+2025:            if len(parts) >= 2 and parts[1] == "device":
+2030:                "No authorized Android devices found.\n"
+2031:                "Connect a phone and enable USB debugging."
+2041:                "No Device",
+2042:                "Please connect and select an Android device."
+2056:        self.log("Android full diagnostic completed.")
+2066:        self.log("Android device information requested.")
+2076:        self.log("Android battery information requested.")
+2086:        self.log("Android storage analysis requested.")
+2096:        self.log("Android installed apps listed.")
+2109:                "Operation Logs",
+2110:                "Application activity and command history."
+2119:        clear_button = QPushButton("Clear Logs")
+2144:        self.log(f"Opened page: {title}")
+2169:            ("ADB", ["adb", "version"]),
+2170:            ("Fastboot", ["fastboot", "--version"]),
+2181:                    f"Path: {path}\n"
+2189:                    "Install Android Platform Tools."
+2194:            "Tool Status",
+2198:        self.log("Checked ADB and Fastboot.")
+2210:        self.log("Scanning Android devices...")
+2214:        if shutil.which("adb"):
+2217:                "adb",
+2218:                "devices",
+2236:                            "serial": parts[0],
+2237:                            "state": parts[1],
+2238:                            "details": " ".join(parts[2:])
+2243:            "ADB scan completed."
+2252:                "DEMO-ANDROID-001",
+2253:                "demo",
+2254:                "Samsung Galaxy S24 (Virtual)"
+2266:            self.log("Demo Android device loaded.")
+2284:                device["serial"],
+2285:                device["state"],
+2286:                device["details"]
+2353:        if state == "demo":
+2381:            self.log("Demo device information displayed.")
+2384:        if state != "device":
+2387:                f"Serial Number: {serial}\n"
+2388:                f"State: {state}\n\n"
+2389:                "Device authorization is required."
+2394:            ("Manufacturer", "ro.product.manufacturer"),
+2395:            ("Brand", "ro.product.brand"),
+2396:            ("Model", "ro.product.model"),
+2397:            ("Device", "ro.product.device"),
+2398:            ("Android Version", "ro.build.version.release"),
+2399:            ("SDK Version", "ro.build.version.sdk"),
+2400:            ("Build ID", "ro.build.display.id"),
+2401:            ("Security Patch", "ro.build.version.security_patch"),
+2402:            ("Serial Number", "ro.serialno"),
+2409:            f"ADB Serial: {serial}",
+2416:                "adb",
+2419:                "shell",
+2420:                "getprop",
+2432:            f"Read device information: {serial}"
