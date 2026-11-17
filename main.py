@@ -9,7 +9,7 @@ import shutil
 import subprocess
 from datetime import datetime
 
-from PySide6.QtCore import Qt, QSettings, QTimer
+from PySide6.QtCore import Qt, QSettings, QTimer, QProcess
 from PySide6.QtWidgets import (
     QApplication,
     QScrollArea,
@@ -45,128 +45,249 @@ APP_VERSION = "1.1.0"
 
 STYLE = """
 QMainWindow, QWidget {
-    background-color: #071426;
-    color: #e8f3ff;
+    background-color: #080d1c;
+    color: #eaf6ff;
     font-family: Segoe UI;
     font-size: 10pt;
 }
+
 QFrame#Header {
-    background-color: #081a30;
-    border-bottom: 2px solid #087bd1;
+    background-color: #10172d;
+    border-bottom: 2px solid #00cfff;
 }
+
 QFrame#Sidebar {
-    background-color: #0b1930;
-    border-right: 2px solid #087bd1;
+    background-color: #0c1428;
+    border-right: 2px solid #087fff;
 }
+
 QFrame#Footer {
-    background-color: #081426;
-    border-top: 1px solid #087bd1;
+    background-color: #10172d;
+    border-top: 1px solid #00cfff;
 }
+
 QLabel#Brand {
-    color: #29baff;
-    font-size: 23pt;
+    color: #00e5ff;
+    font-size: 25pt;
     font-weight: bold;
 }
+
 QLabel#BrandSubtitle {
-    color: #d8eaff;
+    color: #b9a5ff;
     font-size: 13pt;
     font-weight: bold;
 }
+
 QLabel#PageTitle {
     color: #ffffff;
-    font-size: 21pt;
-    font-weight: bold;
-}
-QLabel#HeroTitle {
-    color: #ffffff;
     font-size: 23pt;
     font-weight: bold;
 }
+
+QLabel#HeroTitle {
+    color: #00e5ff;
+    font-size: 25pt;
+    font-weight: bold;
+}
+
 QLabel#HeroDescription {
-    color: #b9d9ff;
+    color: #c4d8ff;
     font-size: 12pt;
 }
+
 QLabel#CardTitle {
-    color: #ffffff;
+    color: #d9eaff;
     font-size: 13pt;
     font-weight: bold;
 }
+
 QLabel#CardValue {
-    color: #35baff;
-    font-size: 21pt;
+    color: #00e5ff;
+    font-size: 23pt;
     font-weight: bold;
 }
+
 QLabel#CardIcon {
-    font-size: 29pt;
+    font-size: 32pt;
+    color: #00e5ff;
+    padding: 5px;
 }
-QFrame#Hero, QFrame#DevicePanel, QFrame#ToolCard {
-    background-color: #101e34;
-    border: 1px solid #17639b;
-    border-radius: 13px;
+
+QFrame#Hero {
+    background-color: qlineargradient(
+        x1:0, y1:0, x2:1, y2:1,
+        stop:0 #102b55,
+        stop:0.55 #14234b,
+        stop:1 #241b50
+    );
+    border: 1px solid #168dff;
+    border-radius: 16px;
 }
+
+QFrame#DevicePanel {
+    background-color: qlineargradient(
+        x1:0, y1:0, x2:1, y2:1,
+        stop:0 #103b3b,
+        stop:1 #102344
+    );
+    border: 1px solid #00dca5;
+    border-radius: 16px;
+}
+
+QFrame#ToolCard {
+    background-color: qlineargradient(
+        x1:0, y1:0, x2:1, y2:1,
+        stop:0 #172b50,
+        stop:1 #171d3d
+    );
+    border: 1px solid #3869b5;
+    border-radius: 15px;
+}
+
+QFrame#Hero:hover, QFrame#DevicePanel:hover,
+QFrame#ToolCard:hover {
+    border: 2px solid #00e5ff;
+    background-color: #1a3560;
+}
+
 QPushButton {
-    background-color: #142943;
-    color: #eaf5ff;
-    border: 1px solid #244c70;
-    border-radius: 8px;
+    background-color: #172744;
+    color: #eaf6ff;
+    border: 1px solid #315a91;
+    border-radius: 9px;
     padding: 10px;
     text-align: left;
 }
+
 QPushButton:hover {
-    background-color: #164b78;
-    border: 1px solid #20baff;
+    background-color: #174b78;
+    border: 1px solid #00e5ff;
+    color: #ffffff;
 }
+
+QPushButton:pressed {
+    background-color: #087bd1;
+}
+
 QPushButton:checked {
-    background-color: #0755a8;
-    border-left: 4px solid #28c8ff;
-    color: white;
+    background-color: #123e70;
+    border: 1px solid #00e5ff;
+    border-left: 4px solid #00e5ff;
+    color: #ffffff;
     font-weight: bold;
 }
+
 QPushButton#Primary, QPushButton#CardAction {
-    background-color: #087ce5;
+    background-color: #087ff5;
     color: white;
-    border: none;
+    border: 1px solid #00d9ff;
     border-radius: 18px;
     font-weight: bold;
-    padding: 10px 16px;
+    padding: 11px 18px;
     text-align: center;
 }
+
 QPushButton#Primary:hover, QPushButton#CardAction:hover {
-    background-color: #079fe9;
+    background-color: #00a9ff;
+    border: 1px solid #9af5ff;
+    color: #ffffff;
 }
+
 QPushButton#HeaderButton {
-    background-color: #10233b;
-    border: 1px solid #28547b;
-    padding: 8px 14px;
+    background-color: #172744;
+    color: #00e5ff;
+    border: 1px solid #287ac0;
+    border-radius: 9px;
+    padding: 9px 15px;
     text-align: center;
 }
+
+QPushButton#HeaderButton:hover {
+    background-color: #174b78;
+    border: 1px solid #00e5ff;
+}
+
 QLineEdit, QComboBox {
-    background-color: #101e34;
-    border: 1px solid #28547b;
-    border-radius: 7px;
-    padding: 9px;
+    background-color: #111d38;
+    border: 1px solid #287ac0;
+    border-radius: 8px;
+    padding: 10px;
+    color: #ffffff;
+    selection-background-color: #087ff5;
+}
+
+QLineEdit:focus, QComboBox:focus {
+    border: 2px solid #00d9ff;
+}
+
+QComboBox QAbstractItemView {
+    background-color: #111d38;
     color: white;
+    selection-background-color: #087ff5;
+    border: 1px solid #00d9ff;
 }
+
 QTableWidget {
-    background-color: #101e34;
-    alternate-background-color: #172943;
-    border: 1px solid #244c70;
-    gridline-color: #244c70;
+    background-color: #101a32;
+    alternate-background-color: #172744;
+    border: 1px solid #287ac0;
+    gridline-color: #29476d;
+    selection-background-color: #155da5;
+    selection-color: white;
 }
+
 QHeaderView::section {
-    background-color: #142943;
-    color: #39bdff;
-    padding: 9px;
+    background-color: #172744;
+    color: #00e5ff;
+    padding: 10px;
     border: none;
+    border-bottom: 2px solid #087ff5;
     font-weight: bold;
 }
+
 QTextEdit {
-    background-color: #081426;
-    color: #a7f3d0;
-    border: 1px solid #244c70;
-    border-radius: 7px;
+    background-color: #0b1428;
+    color: #8fffd2;
+    border: 1px solid #287ac0;
+    border-radius: 9px;
     padding: 10px;
+    selection-background-color: #087ff5;
 }
+
+QScrollBar:vertical {
+    background: #0b1428;
+    width: 11px;
+    margin: 0;
+}
+
+QScrollBar::handle:vertical {
+    background: #087ff5;
+    min-height: 25px;
+    border-radius: 5px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background: #00d9ff;
+}
+
+QScrollBar:horizontal {
+    background: #0b1428;
+    height: 11px;
+}
+
+QScrollBar::handle:horizontal {
+    background: #087ff5;
+    min-width: 25px;
+    border-radius: 5px;
+}
+
+QToolTip {
+    background-color: #172744;
+    color: #00e5ff;
+    border: 1px solid #00d9ff;
+    padding: 5px;
+}
+
 QLabel {
     background: transparent;
 }
@@ -235,6 +356,12 @@ class AymtechPro(QMainWindow):
         self.adb_output = None
         # Live Phone Screen
         self.phone_screen_label = None
+        self.phone_screen_serial = None
+        self.phone_screen_busy = False
+        self.phone_screen_process = QProcess(self)
+        self.phone_screen_process.finished.connect(
+         self.phone_screen_capture_finished
+        )
         self.phone_screen_status = None
         self.phone_screen_timer = QTimer(self)
         self.phone_screen_timer.setInterval(700)
@@ -368,7 +495,7 @@ class AymtechPro(QMainWindow):
             "Live Phone Screen": "▣",
         }
 
-        for title
+        for title, creator in navigation:
             button = QPushButton(title)
             button.setMinimumHeight(43)
             button.setCheckable(True)
@@ -2369,7 +2496,142 @@ class AymtechPro(QMainWindow):
         layout.addWidget(clear_button)
 
         return page
+    def create_phone_screen_page(self):
 
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(25, 20, 25, 20)
+        layout.setSpacing(12)
+
+        title = QLabel("Live Phone Screen")
+        title.setObjectName("PageTitle")
+        layout.addWidget(title)
+
+        self.phone_screen_status = QLabel(
+            "Status: Waiting for Android device"
+        )
+        layout.addWidget(self.phone_screen_status)
+
+        controls = QHBoxLayout()
+
+        start_button = QPushButton("Start Preview")
+        start_button.clicked.connect(self.start_phone_screen)
+        controls.addWidget(start_button)
+
+        stop_button = QPushButton("Stop Preview")
+        stop_button.clicked.connect(self.stop_phone_screen)
+        controls.addWidget(stop_button)
+
+        layout.addLayout(controls)
+
+        self.phone_screen_label = QLabel(
+            "Connect an Android device and start preview"
+        )
+        self.phone_screen_label.setAlignment(Qt.AlignCenter)
+        self.phone_screen_label.setMinimumSize(360, 500)
+        self.phone_screen_label.setStyleSheet(
+            "background-color: #101827; color: #94a3b8;"
+            "border: 1px solid #2563eb; border-radius: 10px;"
+        )
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(self.phone_screen_label)
+
+        layout.addWidget(scroll, 1)
+
+        return page
+    def start_phone_screen(self):
+
+        serial = self.get_adb_serial()
+        if not serial:
+            return
+
+        if not shutil.which("adb"):
+            QMessageBox.warning(
+                self,
+                "ADB Missing",
+                "ADB was not found. Install Android Platform Tools."
+            )
+            return
+
+        self.phone_screen_serial = serial
+        self.phone_screen_status.setText(
+            "Status: Starting phone screen preview..."
+        )
+
+        self.phone_screen_timer.start()
+
+    def stop_phone_screen(self):
+
+        self.phone_screen_timer.stop()
+
+        if self.phone_screen_process.state() != QProcess.NotRunning:
+            self.phone_screen_process.kill()
+
+        self.phone_screen_busy = False
+        self.phone_screen_status.setText(
+            "Status: Preview stopped"
+        )
+
+    def update_phone_screen(self):
+
+        if self.phone_screen_busy:
+            return
+
+        if not self.phone_screen_serial:
+            self.stop_phone_screen()
+            return
+
+        self.phone_screen_busy = True
+
+        self.phone_screen_process.start(
+            "adb",
+            [
+                "-s",
+                self.phone_screen_serial,
+                "exec-out",
+                "screencap",
+                "-p"
+            ]
+        )
+
+    def phone_screen_capture_finished(
+        self, exit_code, exit_status
+    ):
+
+        self.phone_screen_busy = False
+
+        if exit_code != 0:
+            self.phone_screen_status.setText(
+                "Status: Device disconnected or ADB error"
+            )
+            self.stop_phone_screen()
+            return
+
+        data = self.phone_screen_process.readAllStandardOutput()
+
+        image = QImage.fromData(bytes(data), "PNG")
+
+        if image.isNull():
+            self.phone_screen_status.setText(
+                "Status: Could not read phone screenshot"
+            )
+            return
+
+        pixmap = QPixmap.fromImage(image)
+
+        self.phone_screen_label.setPixmap(
+            pixmap.scaled(
+                self.phone_screen_label.size(),
+                Qt.KeepAspectRatio,
+                Qt.SmoothTransformation
+            )
+        )
+
+        self.phone_screen_status.setText(
+            f"Status: Connected - {image.width()} x {image.height()}"
+        )
     # =====================================================
     # NAVIGATION
     # =====================================================
