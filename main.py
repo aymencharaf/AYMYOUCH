@@ -44,25 +44,34 @@ APP_NAME = "AYMTECH PRO"
 APP_VERSION = "1.1.0"
 
 STYLE = """
-QMainWindow, QWidget {
+QMainWindow {
     background-color: #080d1c;
+    color: #eaf6ff;
+}
+
+QWidget {
+    background: transparent;
     color: #eaf6ff;
     font-family: Segoe UI;
     font-size: 10pt;
 }
 
+QWidget#MainBackground {
+    border-image: url("assets/AZED.jpg") 0 0 0 0 stretch stretch;
+}
+
 QFrame#Header {
-    background-color: #10172d;
+    background-color: rgba(3, 17, 39, 225);
     border-bottom: 2px solid #00cfff;
 }
 
 QFrame#Sidebar {
-    background-color: #0c1428;
-    border-right: 2px solid #087fff;
+    background-color: rgba(4, 19, 43, 220);
+    border-right: 2px solid #00cfff;
 }
 
 QFrame#Footer {
-    background-color: #10172d;
+    background-color: rgba(3, 17, 39, 225);
     border-top: 1px solid #00cfff;
 }
 
@@ -114,33 +123,20 @@ QLabel#CardIcon {
 }
 
 QFrame#Hero {
-    background-color: qlineargradient(
-        x1:0, y1:0, x2:1, y2:1,
-        stop:0 #102b55,
-        stop:0.55 #14234b,
-        stop:1 #241b50
-    );
-    border: 1px solid #168dff;
+    background-color: rgba(5, 28, 61, 210);
+    border: 1px solid #00cfff;
     border-radius: 16px;
 }
 
 QFrame#DevicePanel {
-    background-color: qlineargradient(
-        x1:0, y1:0, x2:1, y2:1,
-        stop:0 #103b3b,
-        stop:1 #102344
-    );
-    border: 1px solid #00dca5;
+    background-color: rgba(0, 48, 65, 215);
+    border: 1px solid #00e5c0;
     border-radius: 16px;
 }
 
 QFrame#ToolCard {
-    background-color: qlineargradient(
-        x1:0, y1:0, x2:1, y2:1,
-        stop:0 #172b50,
-        stop:1 #171d3d
-    );
-    border: 1px solid #3869b5;
+    background-color: rgba(5, 24, 52, 215);
+    border: 1px solid #168dff;
     border-radius: 15px;
 }
 
@@ -151,7 +147,7 @@ QFrame#ToolCard:hover {
 }
 
 QPushButton {
-    background-color: #172744;
+    background-color: rgba(8, 65, 115, 225);
     color: #eaf6ff;
     border: 1px solid #315a91;
     border-radius: 9px;
@@ -160,7 +156,7 @@ QPushButton {
 }
 
 QPushButton:hover {
-    background-color: #174b78;
+    background-color: #087fb5;
     border: 1px solid #00e5ff;
     color: #ffffff;
 }
@@ -178,7 +174,7 @@ QPushButton:checked {
 }
 
 QPushButton#Primary, QPushButton#CardAction {
-    background-color: #087ff5;
+    background-color: #087fe8;
     color: white;
     border: 1px solid #00d9ff;
     border-radius: 18px;
@@ -208,7 +204,7 @@ QPushButton#HeaderButton:hover {
 }
 
 QLineEdit, QComboBox {
-    background-color: #111d38;
+    background-color: rgba(3, 24, 51, 235);
     border: 1px solid #287ac0;
     border-radius: 8px;
     padding: 10px;
@@ -246,7 +242,7 @@ QHeaderView::section {
 }
 
 QTextEdit {
-    background-color: #0b1428;
+    background-color: rgba(3, 17, 38, 235);
     color: #8fffd2;
     border: 1px solid #287ac0;
     border-radius: 9px;
@@ -388,6 +384,7 @@ class AymtechPro(QMainWindow):
     def build_interface(self):
 
         central = QWidget()
+        central.setObjectName("MainBackground")
         self.setCentralWidget(central)
 
         root = QVBoxLayout(central)
