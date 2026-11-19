@@ -21,7 +21,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QPushButton,
     QFrame,
-    QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
     QHeaderView,
@@ -35,259 +34,24 @@ from PySide6.QtWidgets import (
 from tools.adb_tools import ADBTools
 from tools.translations import translate_text
 
+from ui import theme as ui_theme
+from ui import icons as ui_icons
+from ui.dashboard import DashboardPage
+from ui.pages import PageShell
+from ui.shell import AppShell
+from ui.widgets import PageSubtitle, PageTitle
+
 
 # =========================================================
 # CONFIGURATION
 # =========================================================
 
 APP_NAME = "AYMTECH PRO"
-APP_VERSION = "1.1.0"
+APP_VERSION = "2.0.0"
 
-STYLE = """
-QMainWindow {
-    background-color: #080d1c;
-    color: #eaf6ff;
-}
-
-QWidget {
-    background: transparent;
-    color: #eaf6ff;
-    font-family: Segoe UI;
-    font-size: 10pt;
-}
-
-QWidget#MainBackground {
-    border-image: url("assets/AZED.jpg") 0 0 0 0 stretch stretch;
-}
-
-QFrame#Header {
-    background-color: rgba(3, 17, 39, 225);
-    border-bottom: 2px solid #00cfff;
-}
-
-QFrame#Sidebar {
-    background-color: rgba(4, 19, 43, 220);
-    border-right: 2px solid #00cfff;
-}
-
-QFrame#Footer {
-    background-color: rgba(3, 17, 39, 225);
-    border-top: 1px solid #00cfff;
-}
-
-QLabel#Brand {
-    color: #00e5ff;
-    font-size: 25pt;
-    font-weight: bold;
-}
-
-QLabel#BrandSubtitle {
-    color: #b9a5ff;
-    font-size: 13pt;
-    font-weight: bold;
-}
-
-QLabel#PageTitle {
-    color: #ffffff;
-    font-size: 23pt;
-    font-weight: bold;
-}
-
-QLabel#HeroTitle {
-    color: #00e5ff;
-    font-size: 25pt;
-    font-weight: bold;
-}
-
-QLabel#HeroDescription {
-    color: #c4d8ff;
-    font-size: 12pt;
-}
-
-QLabel#CardTitle {
-    color: #d9eaff;
-    font-size: 13pt;
-    font-weight: bold;
-}
-
-QLabel#CardValue {
-    color: #00e5ff;
-    font-size: 23pt;
-    font-weight: bold;
-}
-
-QLabel#CardIcon {
-    font-size: 32pt;
-    color: #00e5ff;
-    padding: 5px;
-}
-
-QFrame#Hero {
-    background-color: rgba(5, 28, 61, 210);
-    border: 1px solid #00cfff;
-    border-radius: 16px;
-}
-
-QFrame#DevicePanel {
-    background-color: rgba(0, 48, 65, 215);
-    border: 1px solid #00e5c0;
-    border-radius: 16px;
-}
-
-QFrame#ToolCard {
-    background-color: rgba(5, 24, 52, 215);
-    border: 1px solid #168dff;
-    border-radius: 15px;
-}
-
-QFrame#Hero:hover, QFrame#DevicePanel:hover,
-QFrame#ToolCard:hover {
-    border: 2px solid #00e5ff;
-    background-color: #1a3560;
-}
-
-QPushButton {
-    background-color: rgba(8, 65, 115, 225);
-    color: #eaf6ff;
-    border: 1px solid #315a91;
-    border-radius: 9px;
-    padding: 10px;
-    text-align: left;
-}
-
-QPushButton:hover {
-    background-color: #087fb5;
-    border: 1px solid #00e5ff;
-    color: #ffffff;
-}
-
-QPushButton:pressed {
-    background-color: #087bd1;
-}
-
-QPushButton:checked {
-    background-color: #123e70;
-    border: 1px solid #00e5ff;
-    border-left: 4px solid #00e5ff;
-    color: #ffffff;
-    font-weight: bold;
-}
-
-QPushButton#Primary, QPushButton#CardAction {
-    background-color: #087fe8;
-    color: white;
-    border: 1px solid #00d9ff;
-    border-radius: 18px;
-    font-weight: bold;
-    padding: 11px 18px;
-    text-align: center;
-}
-
-QPushButton#Primary:hover, QPushButton#CardAction:hover {
-    background-color: #00a9ff;
-    border: 1px solid #9af5ff;
-    color: #ffffff;
-}
-
-QPushButton#HeaderButton {
-    background-color: #172744;
-    color: #00e5ff;
-    border: 1px solid #287ac0;
-    border-radius: 9px;
-    padding: 9px 15px;
-    text-align: center;
-}
-
-QPushButton#HeaderButton:hover {
-    background-color: #174b78;
-    border: 1px solid #00e5ff;
-}
-
-QLineEdit, QComboBox {
-    background-color: rgba(3, 24, 51, 235);
-    border: 1px solid #287ac0;
-    border-radius: 8px;
-    padding: 10px;
-    color: #ffffff;
-    selection-background-color: #087ff5;
-}
-
-QLineEdit:focus, QComboBox:focus {
-    border: 2px solid #00d9ff;
-}
-
-QComboBox QAbstractItemView {
-    background-color: #111d38;
-    color: white;
-    selection-background-color: #087ff5;
-    border: 1px solid #00d9ff;
-}
-
-QTableWidget {
-    background-color: #101a32;
-    alternate-background-color: #172744;
-    border: 1px solid #287ac0;
-    gridline-color: #29476d;
-    selection-background-color: #155da5;
-    selection-color: white;
-}
-
-QHeaderView::section {
-    background-color: #172744;
-    color: #00e5ff;
-    padding: 10px;
-    border: none;
-    border-bottom: 2px solid #087ff5;
-    font-weight: bold;
-}
-
-QTextEdit {
-    background-color: rgba(3, 17, 38, 235);
-    color: #8fffd2;
-    border: 1px solid #287ac0;
-    border-radius: 9px;
-    padding: 10px;
-    selection-background-color: #087ff5;
-}
-
-QScrollBar:vertical {
-    background: #0b1428;
-    width: 11px;
-    margin: 0;
-}
-
-QScrollBar::handle:vertical {
-    background: #087ff5;
-    min-height: 25px;
-    border-radius: 5px;
-}
-
-QScrollBar::handle:vertical:hover {
-    background: #00d9ff;
-}
-
-QScrollBar:horizontal {
-    background: #0b1428;
-    height: 11px;
-}
-
-QScrollBar::handle:horizontal {
-    background: #087ff5;
-    min-width: 25px;
-    border-radius: 5px;
-}
-
-QToolTip {
-    background-color: #172744;
-    color: #00e5ff;
-    border: 1px solid #00d9ff;
-    padding: 5px;
-}
-
-QLabel {
-    background: transparent;
-}
-"""
+# The application stylesheet is generated per theme by
+# ui.theme.build_stylesheet(); see AymtechPro.apply_styles().
+STYLE = ""
 
 
 # =========================================================
@@ -333,12 +97,15 @@ class AymtechPro(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle(
-            f"{APP_NAME} - Android & Mobile Service"
-        )
+        self.setWindowTitle(f"{APP_NAME} - Android Service Suite")
 
-        self.resize(1250, 780)
-        self.setMinimumSize(1050, 650)
+        self.setWindowFlags(
+            Qt.Window | Qt.FramelessWindowHint | Qt.WindowMinMaxButtonsHint
+        )
+        self.setAttribute(Qt.WA_TranslucentBackground, False)
+
+        self.resize(1560, 900)
+        self.setMinimumSize(1280, 760)
 
         self.device_table = None
         self.info_box = None
@@ -365,6 +132,7 @@ class AymtechPro(QMainWindow):
             self.update_phone_screen
         )
         self.navigation_buttons = []
+        self.nav_keys = {}
 
         self.settings = QSettings("AYMTECH", "AYMYOUCH")
         self.current_language = self.settings.value("language", "en")
@@ -373,6 +141,23 @@ class AymtechPro(QMainWindow):
 
         self.language_combo = None
         self.language_label = None
+
+        saved_theme = self.settings.value("theme", ui_theme.DEFAULT_THEME)
+        if saved_theme not in ui_theme.PALETTES:
+            saved_theme = ui_theme.DEFAULT_THEME
+        self.theme_key = saved_theme
+
+        self.opacity = float(self.settings.value("transparency", 0.92) or 0.92)
+        self.animations_enabled = (
+            str(self.settings.value("animations", "true")).lower() == "true"
+        )
+        self.background_mode = self.settings.value("background", "circuit")
+
+        self.shell = None
+        self.dashboard_page = None
+        self._arrow_color = None
+        self.palette = ui_theme.PALETTES[self.theme_key]
+        self._pending_widgets = []
 
         self.build_interface()
         self.refresh_devices()
@@ -383,168 +168,173 @@ class AymtechPro(QMainWindow):
 
     def build_interface(self):
 
-        central = QWidget()
-        central.setObjectName("MainBackground")
-        self.setCentralWidget(central)
+        self.palette = ui_theme.PALETTES[self.theme_key]
 
-        root = QVBoxLayout(central)
-        root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(0)
+        self.panel_opacity = 0.92 if self.opacity > 0.5 else 1.0
+        self.shell = AppShell(self.palette, self.panel_opacity)
+        self.setCentralWidget(self.shell)
 
-        # TOP HEADER
-        header = QFrame()
-        header.setObjectName("Header")
-        header.setFixedHeight(105)
-        header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(22, 8, 22, 8)
+        self.shell.navigate.connect(self.navigate)
+        self.shell.set_translator(self.tr)
+        self.shell.language_selected.connect(self.change_language)
+        self.shell.header.set_language(self.current_language)
+        self.shell.theme_selected.connect(self.select_theme)
+        self.shell.transparency_changed.connect(self.set_transparency)
+        self.shell.animations = self.animations_enabled
+        self.shell.animations_changed.connect(self.set_animations)
+        self.shell.background_changed.connect(self.set_background_mode)
+        self.shell.apply_theme.connect(self.apply_theme_now)
 
-        brand_box = QVBoxLayout()
-        brand = QLabel("📱 AYMEN")
-        brand.setObjectName("Brand")
-        brand_subtitle = QLabel("Phone Service  |  Professional Android Repair Tool")
-        brand_subtitle.setObjectName("BrandSubtitle")
-        brand_box.addWidget(brand)
-        brand_box.addWidget(brand_subtitle)
-        header_layout.addLayout(brand_box)
-
-        header_layout.addStretch()
-
-        self.language_label = QLabel("Language")
-        header_layout.addWidget(self.language_label)
-
-        self.language_combo = QComboBox()
-        self.language_combo.addItem("🇩🇿 العربية", "ar")
-        self.language_combo.addItem("🇫🇷 Français", "fr")
-        self.language_combo.addItem("🇬🇧 English", "en")
-        self.language_combo.setMinimumWidth(145)
-        self.language_combo.setCurrentIndex(
-            self.language_combo.findData(self.current_language)
+        # --- dashboard ---
+        self.dashboard_page = DashboardPage(self.palette, self.panel_opacity)
+        self.dashboard_page.navigate.connect(self.navigate)
+        self.dashboard_page.settings_requested.connect(
+            lambda: self.navigate("Settings")
         )
-        self.language_combo.currentIndexChanged.connect(self.change_language)
-        header_layout.addWidget(self.language_combo)
-
-        update_button = QPushButton("⟳  Update")
-        update_button.setObjectName("HeaderButton")
-        update_button.clicked.connect(
-            lambda: QMessageBox.information(
-                self, self.tr("Update"), self.tr("The update service is not configured yet.")
-            )
+        self.shell.add_page(
+            "Dashboard", "dashboard", "Dashboard", self.dashboard_page
         )
-        header_layout.addWidget(update_button)
 
-        about_button = QPushButton("ⓘ  About")
-        about_button.setObjectName("HeaderButton")
-        about_button.clicked.connect(
-            lambda: QMessageBox.information(
-                self, self.tr("About"),
-                f"{APP_NAME}\\nProfessional Mobile Service Tool\\nVersion {APP_VERSION}"
-            )
-        )
-        header_layout.addWidget(about_button)
-
-        root.addWidget(header)
-
-        # CENTER AREA
-        center = QWidget()
-        center_layout = QHBoxLayout(center)
-        center_layout.setContentsMargins(0, 0, 0, 0)
-        center_layout.setSpacing(0)
-
-        sidebar = QFrame()
-        sidebar.setObjectName("Sidebar")
-        sidebar.setFixedWidth(245)
-
-        sidebar_layout = QVBoxLayout(sidebar)
-        sidebar_layout.setContentsMargins(12, 18, 12, 14)
-        sidebar_layout.setSpacing(7)
-
-        self.pages = QStackedWidget()
-
+        # --- tool pages ---
         navigation = [
-            ("Dashboard", self.create_dashboard),
-            ("Device Manager", self.create_device_manager),
-            ("Device Information", self.create_device_information),
-            ("ADB Tools", self.create_adb_page),
-            ("Live Phone Screen", self.create_phone_screen_page),
-            ("Android Tools", self.create_android_diagnostics_page),
-            ("Screen Lock Service", self.create_screen_lock_page),
-            ("Samsung Tools", self.create_samsung_tools_page),
-            ("Qualcomm Tools", self.create_qualcomm_tools_page),
-            ("MediaTek Tools", self.create_mediatek_tools_page),
-            ("Firmware Center", self.create_firmware_center_page),
-            ("iOS Tools", lambda: self.create_tool_page("iOS Tools")),
-            ("Operation Logs", self.create_logs_page),
+            ("Device Manager", "device_manager", self.create_device_manager),
+            ("Device Information", "device_information", self.create_device_information),
+            ("ADB Tools", "adb", self.create_adb_page),
+            ("Live Phone Screen", "adb", self.create_phone_screen_page),
+            ("Android Tools", "android", self.create_android_diagnostics_page),
+            ("Screen Lock Service", "screen_lock", self.create_screen_lock_page),
+            ("Samsung Tools", "samsung", self.create_samsung_tools_page),
+            ("Qualcomm Tools", "qualcomm", self.create_qualcomm_tools_page),
+            ("MediaTek Tools", "mediatek", self.create_mediatek_tools_page),
+            ("Firmware Center", "firmware", self.create_firmware_center_page),
+            ("iOS Tools", "ios", lambda: self.create_tool_page("iOS Tools")),
+            ("Operation Logs", "logs", self.create_logs_page),
         ]
 
-        self.nav_icons = {
-            "Dashboard": "⌂",
-            "Device Manager": "⚙",
-            "Device Information": "▣",
-            "ADB Tools": "📱",
-            "Android Tools": "🤖",
-            "Screen Lock Service": "🔒",
-            "Samsung Tools": "▣",
-            "Qualcomm Tools": "⚡",
-            "MediaTek Tools": "◆",
-            "Firmware Center": "📦",
-            "iOS Tools": "🍎",
-            "Operation Logs": "📄",
-            "Live Phone Screen": "▣",
-        }
+        for title, icon_name, creator in navigation:
+            content = creator()
+            page = PageShell(self.palette, content, self.panel_opacity)
+            self.shell.add_page(title, icon_name, title, page)
 
-        for title, creator in navigation:
-            button = QPushButton(title)
-            button.setMinimumHeight(43)
-            button.setCheckable(True)
-            button.setCursor(Qt.PointingHandCursor)
-            button.clicked.connect(
-                lambda checked=False, t=title: self.navigate(t)
-            )
-            sidebar_layout.addWidget(button)
-            self.navigation_buttons.append((title, button))
-            self.pages.addWidget(creator())
+        # --- settings ---
+        settings_page = PageShell(
+            self.palette, self.create_settings_page(), self.panel_opacity
+        )
+        self.shell.add_page("Settings", "settings", "Settings", settings_page)
 
-        sidebar_layout.addStretch()
+        self.shell.finish_pages()
+        self.setMouseTracking(True)
+        self.shell.set_background_mode(self.background_mode)
+        self.shell.theme_dock.transparency_switch.setChecked(self.opacity > 0.5)
+        self.shell.theme_dock.animations_switch.setChecked(self.animations_enabled)
 
-        version = QLabel(f"AYMTECH PRO  v{APP_VERSION}")
-        version.setStyleSheet("color:#48baff; font-weight:bold;")
-        sidebar_layout.addWidget(version)
+        self.navigation_buttons = list(self.shell.sidebar.buttons.items())
 
-        center_layout.addWidget(sidebar)
-        center_layout.addWidget(self.pages, 1)
-        root.addWidget(center, 1)
-
-        # BOTTOM STATUS BAR
-        footer = QFrame()
-        footer.setObjectName("Footer")
-        footer.setFixedHeight(39)
-        footer_layout = QHBoxLayout(footer)
-        footer_layout.setContentsMargins(18, 3, 18, 3)
-
-        self.footer_status = QLabel("🟢  Ready for service")
-        footer_layout.addWidget(self.footer_status)
-        footer_layout.addStretch()
-
-        date_label = QLabel(datetime.now().strftime("%Y/%m/%d"))
-        time_label = QLabel(datetime.now().strftime("%H:%M:%S"))
-        footer_layout.addWidget(QLabel("▦"))
-        footer_layout.addWidget(date_label)
-        footer_layout.addSpacing(20)
-        footer_layout.addWidget(QLabel("◷"))
-        footer_layout.addWidget(time_label)
-        footer_layout.addSpacing(20)
-        footer_layout.addWidget(QLabel(f"V{APP_VERSION}"))
-
-        root.addWidget(footer)
-
+        self.apply_styles()
         self._collect_translatable_widgets()
         self.apply_language()
         self.navigate("Dashboard")
+        self.start_clock()
+        self.update_status_bar()
+
+    # =====================================================
+    # THEMING
+    # =====================================================
+
+    def apply_styles(self):
+
+        import os
+        from ui.widgets import ASSETS
+
+        arrow = os.path.join(ASSETS, "arrow.png")
+        if not os.path.exists(arrow) or self._arrow_color != self.palette.accent:
+            ui_icons.write_arrow_asset(self.palette.accent, arrow)
+            self._arrow_color = self.palette.accent
+
+        QApplication.instance().setStyleSheet(
+            ui_theme.build_stylesheet(
+                self.palette, self.panel_opacity, arrow.replace(os.sep, "/")
+            )
+        )
+
+    def select_theme(self, key):
+
+        if key not in ui_theme.PALETTES:
+            return
+
+        self.theme_key = key
+        self.palette = ui_theme.PALETTES[key]
+        self.apply_theme_now()
+
+    def retheme(self):
+
+        self.shell.set_palette(self.palette, self.panel_opacity)
+        pages = self.shell.pages
+        for index in range(pages.count()):
+            widget = pages.widget(index)
+            if hasattr(widget, "set_palette"):
+                try:
+                    widget.set_palette(self.palette, self.panel_opacity)
+                except TypeError:
+                    widget.set_palette(self.palette)
+        self.update_status_bar()
+
+    def apply_theme_now(self):
+
+        self.palette = ui_theme.PALETTES[self.theme_key]
+        self.settings.setValue("theme", self.theme_key)
+
+        self.apply_styles()
+        self.retheme()
+        self.shell.theme_dock.set_active_theme(self.theme_key)
+        self.shell.theme_dock.apply_button.setStyleSheet(
+            self.shell.theme_dock._apply_style(self.palette)
+        )
+
+        if self.dashboard_page is not None:
+            self.dashboard_page.set_palette(self.palette, self.panel_opacity)
+
+        self._retint_header_icons()
+        self.shell.refresh_localized_texts()
+        self.log(f"Theme applied: {self.palette.name}")
+
+    def _retint_header_icons(self):
+
+        for label, icon_name in getattr(self, "_header_icons", []):
+            pixmap = ui_icons.make_pixmap(icon_name, self.palette.accent, 24)
+            label.setPixmap(pixmap)
+            label.setStyleSheet(
+                "QLabel {{ background-color: {}; border: 1px solid {};"
+                " border-radius: 11px; }}".format(
+                    ui_theme.rgba(self.palette.accent_rgb, 0.14),
+                    ui_theme.rgba(self.palette.accent_rgb, 0.45),
+                )
+            )
+
+    def set_transparency(self, enabled):
+
+        self.panel_opacity = 0.92 if enabled else 1.0
+        self.settings.setValue("transparency", self.panel_opacity)
+        self.apply_styles()
+        self.retheme()
+
+    def set_animations(self, enabled):
+
+        self.animations_enabled = bool(enabled)
+        self.settings.setValue("animations", "true" if enabled else "false")
+        if self.shell is not None:
+            self.shell.animations = self.animations_enabled
+
+    def set_background_mode(self, mode):
+
+        if not mode:
+            return
+        self.background_mode = mode
+        self.settings.setValue("background", mode)
+        self.shell.set_background_mode(mode)
 
 
-    def change_language(self, index):
-        language = self.language_combo.itemData(index)
-
+    def change_language(self, language):
         if language not in ("ar", "fr", "en"):
             return
 
@@ -614,31 +404,90 @@ class AymtechPro(QMainWindow):
                 widget.setText(translated)
 
         # Keep navigation identifiers in English internally.
-        for title, button in self.navigation_buttons:
-            icon = getattr(self, "nav_icons", {}).get(title, "")
-            label = translate_text(title, language)
-            button.setText(f"{icon}   {label}" if icon else label)
+        labels = {}
+        for title in list(self.shell.sidebar.buttons):
+            labels[title] = translate_text(title, language)
+        self.shell.sidebar.set_labels(labels)
+
+        if self.dashboard_page is not None:
+            self.apply_dashboard_language()
+
+        if self.shell is not None:
+            self.shell.set_translator(self.tr)
+            self.update_status_bar()
 
     def tr(self, text):
         return translate_text(text, self.current_language)
 
+    def set_status(self, label, kind="info"):
+        """Colour a status label from the active palette."""
+        if label is None:
+            return
+        label.setProperty("status", kind)
+        label.setStyleSheet("")
+        label.style().unpolish(label)
+        label.style().polish(label)
+        label.update()
+
     # PAGE HEADER
     # =====================================================
+
+    PAGE_ICONS = {
+        "Dashboard": "dashboard",
+        "Device Manager": "device_manager",
+        "Device Information": "device_information",
+        "ADB Tools": "adb",
+        "Live Phone Screen": "adb",
+        "Android Tools": "android",
+        "Screen Lock Service": "screen_lock",
+        "Samsung Tools": "samsung",
+        "Qualcomm Tools": "qualcomm",
+        "MediaTek Tools": "mediatek",
+        "Firmware Center": "firmware",
+        "iOS Tools": "ios",
+        "Operation Logs": "logs",
+        "Settings": "settings",
+    }
 
     def create_page_header(self, title, description=""):
 
         layout = QVBoxLayout()
+        layout.setSpacing(2)
 
-        title_label = QLabel(title)
-        title_label.setObjectName("PageTitle")
-        layout.addWidget(title_label)
+        title_row = QHBoxLayout()
+        title_row.setSpacing(10)
+
+        icon_name = self.PAGE_ICONS.get(title)
+        if icon_name:
+            icon_label = QLabel()
+            icon_label.setFixedSize(38, 38)
+            icon_label.setAlignment(Qt.AlignCenter)
+            icon_label.setPixmap(
+                ui_icons.make_pixmap(icon_name, self.palette.accent, 24)
+            )
+            icon_label.setStyleSheet(
+                "QLabel {{ background-color: {}; border: 1px solid {};"
+                " border-radius: 11px; }}".format(
+                    ui_theme.rgba(self.palette.accent_rgb, 0.14),
+                    ui_theme.rgba(self.palette.accent_rgb, 0.45),
+                )
+            )
+            if not hasattr(self, "_header_icons"):
+                self._header_icons = []
+            self._header_icons.append((icon_label, icon_name))
+            title_row.addWidget(icon_label)
+
+        title_label = PageTitle(title)
+        title_row.addWidget(title_label)
+        title_row.addStretch()
+
+        layout.addLayout(title_row)
 
         if description:
-            desc = QLabel(description)
-            desc.setStyleSheet("color: #94a3b8;")
+            desc = PageSubtitle(description)
             layout.addWidget(desc)
 
-        layout.addSpacing(15)
+        layout.addSpacing(8)
 
         return layout
 
@@ -648,154 +497,301 @@ class AymtechPro(QMainWindow):
 
     def create_dashboard(self):
 
+        # The dashboard is created directly by build_interface(); this
+        # method returns a lightweight fallback for compatibility.
         page = QWidget()
         layout = QVBoxLayout(page)
-        layout.setContentsMargins(16, 15, 16, 15)
-        layout.setSpacing(12)
-
-        top_row = QHBoxLayout()
-        top_row.setSpacing(12)
-
-        hero = QFrame()
-        hero.setObjectName("Hero")
-        hero_layout = QVBoxLayout(hero)
-        hero_layout.setContentsMargins(22, 20, 22, 20)
-
-        welcome = QLabel("مرحباً بك في")
-        welcome.setStyleSheet("font-size:17pt; font-weight:bold; color:#ffffff;")
-
-        title = QLabel("AYMEN Phone Service")
-        title.setObjectName("HeroTitle")
-
-        description = QLabel(
-            "Professional Android Repair Tool\\n"
-            "أدوات تشخيص وصيانة الهواتف المحمولة"
-        )
-        description.setObjectName("HeroDescription")
-        description.setWordWrap(True)
-
-        hero_layout.addWidget(welcome)
-        hero_layout.addWidget(title)
-        hero_layout.addWidget(description)
-        hero_layout.addStretch()
-
-        device_panel = QFrame()
-        device_panel.setObjectName("DevicePanel")
-        device_panel.setMinimumWidth(245)
-        device_layout = QVBoxLayout(device_panel)
-        device_layout.setContentsMargins(16, 16, 16, 16)
-
-        connected_title = QLabel("🟢  Device Connection")
-        connected_title.setStyleSheet(
-            "color:#20df83; font-size:13pt; font-weight:bold;"
-        )
-        device_layout.addWidget(connected_title)
-
-        device_info = QLabel(
-            "No device information yet.\\n\\n"
-            "Connect an Android phone using USB debugging, "
-            "then select Refresh Devices."
-        )
-        device_info.setWordWrap(True)
-        device_info.setStyleSheet("color:#d5e8ff; line-height:1.5;")
-        device_layout.addWidget(device_info)
-        device_layout.addStretch()
-
-        refresh = QPushButton("⟳  Refresh Devices")
-        refresh.setObjectName("Primary")
-        refresh.clicked.connect(self.refresh_devices)
-        device_layout.addWidget(refresh)
-
-        top_row.addWidget(hero, 3)
-        top_row.addWidget(device_panel, 2)
-        layout.addLayout(top_row)
-
-        section = QLabel("SERVICE TOOLS")
-        section.setStyleSheet(
-            "color:#31baff; font-size:14pt; font-weight:bold;"
-        )
-        layout.addWidget(section)
-
-        cards = [
-            ("🔒", "Screen Lock Service",
-             "Screen lock diagnostics and official recovery guidance.",
-             "Screen Lock Service"),
-            ("ℹ️", "Device Information",
-             "View connected phone information and device details.",
-             "Device Information"),
-            ("📱", "ADB Tools",
-             "Manage ADB connection and supported device operations.",
-             "ADB Tools"),
-            ("📦", "Firmware Center",
-             "Inspect firmware files and calculate file checksums.",
-             "Firmware Center"),
-            ("🤖", "Android Diagnostics",
-             "Battery, storage and Android device diagnostics.",
-             "Android Tools"),
-            ("⚙️", "Device Manager",
-             "Detect and manage connected mobile devices.",
-             "Device Manager"),
-        ]
-
-        grid = QGridLayout()
-        grid.setSpacing(12)
-
-        for index, (icon, name, description, target) in enumerate(cards):
-            card = QFrame()
-            card.setObjectName("ToolCard")
-            card_layout = QVBoxLayout(card)
-            card_layout.setContentsMargins(13, 12, 13, 12)
-            card_layout.setSpacing(7)
-
-            icon_label = QLabel(icon)
-            icon_label.setObjectName("CardIcon")
-            icon_label.setAlignment(Qt.AlignCenter)
-
-            name_label = QLabel(name)
-            name_label.setObjectName("CardTitle")
-            name_label.setAlignment(Qt.AlignCenter)
-
-            desc_label = QLabel(description)
-            desc_label.setWordWrap(True)
-            desc_label.setAlignment(Qt.AlignCenter)
-            desc_label.setStyleSheet("color:#b8cce2;")
-
-            action = QPushButton("Open Tool  →")
-            action.setObjectName("CardAction")
-            action.clicked.connect(
-                lambda checked=False, t=target: self.navigate(t)
+        layout.setContentsMargins(30, 25, 30, 25)
+        layout.addLayout(
+            self.create_page_header(
+                "Dashboard",
+                "Welcome to AYMTECH PRO."
             )
-
-            card_layout.addWidget(icon_label)
-            card_layout.addWidget(name_label)
-            card_layout.addWidget(desc_label, 1)
-            card_layout.addWidget(action)
-
-            grid.addWidget(card, index // 3, index % 3)
-
-        layout.addLayout(grid)
-
-        quick = QHBoxLayout()
-        quick_title = QLabel("Quick Actions")
-        quick_title.setStyleSheet(
-            "font-size:12pt; font-weight:bold; color:#ffffff;"
         )
-        quick.addWidget(quick_title)
-        quick.addStretch()
-
-        check_button = QPushButton("Check ADB / Fastboot")
-        check_button.clicked.connect(self.check_tools)
-        quick.addWidget(check_button)
-
-        logs_button = QPushButton("Operation Logs")
-        logs_button.clicked.connect(
-            lambda: self.navigate("Operation Logs")
-        )
-        quick.addWidget(logs_button)
-
-        layout.addLayout(quick)
+        layout.addStretch()
         return page
 
+    def apply_dashboard_language(self):
+
+        language = self.current_language
+        texts = [
+            ("Flashing Tools", "Flash Firmware"),
+            ("Unlock Tools", "Remove FRP & Unlock"),
+            ("Screen Lock Service", "Diagnose & Recover"),
+            ("Android Tools", "Advanced Features"),
+            ("IMEI Tools", "Repair IMEI"),
+            ("Settings", "Customize Your Experience"),
+        ]
+        translated = [
+            (translate_text(t, language), translate_text(s, language))
+            for t, s in texts
+        ]
+        self.dashboard_page.grid.set_texts(translated)
+
+        features = [
+            translate_text(t, language)
+            for t in (
+                "Fast & Reliable Tools",
+                "Advanced Diagnostics",
+                "Official Recovery Guides",
+                "Safe & Professional",
+            )
+        ]
+        self.dashboard_page.hero.set_texts(
+            translate_text("Welcome to", language),
+            translate_text(
+                "Your Professional Android Repair Solution", language
+            ),
+            features,
+        )
+
+
+    # =====================================================
+    # SETTINGS PAGE
+    # =====================================================
+
+    def create_settings_page(self):
+
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(6, 6, 6, 6)
+        layout.setSpacing(14)
+
+        layout.addLayout(
+            self.create_page_header(
+                "Settings",
+                "Personalise language, appearance and service preferences."
+            )
+        )
+
+        # ---- language ----
+        language_group = QFrame()
+        language_group.setObjectName("ToolCard")
+        language_layout = QVBoxLayout(language_group)
+        language_layout.setContentsMargins(18, 14, 18, 16)
+        language_layout.setSpacing(8)
+
+        language_title = QLabel("Language")
+        language_title.setObjectName("CardTitle")
+        language_layout.addWidget(language_title)
+
+        language_hint = QLabel("Choose the interface language.")
+        language_hint.setStyleSheet(f"color: {self.palette.text_muted};")
+        language_layout.addWidget(language_hint)
+
+        self.language_combo = QComboBox()
+        self.language_combo.addItem("العربية", "ar")
+        self.language_combo.addItem("Français", "fr")
+        self.language_combo.addItem("English", "en")
+        self.language_combo.setMinimumHeight(40)
+        self.language_combo.setCurrentIndex(
+            self.language_combo.findData(self.current_language)
+        )
+        self.language_combo.currentIndexChanged.connect(
+            lambda index: self.change_language(
+                self.language_combo.itemData(index)
+            )
+        )
+        language_layout.addWidget(self.language_combo)
+        layout.addWidget(language_group)
+
+        # ---- appearance ----
+        appearance_group = QFrame()
+        appearance_group.setObjectName("ToolCard")
+        appearance_layout = QVBoxLayout(appearance_group)
+        appearance_layout.setContentsMargins(18, 14, 18, 16)
+        appearance_layout.setSpacing(8)
+
+        appearance_title = QLabel("Appearance")
+        appearance_title.setObjectName("CardTitle")
+        appearance_layout.addWidget(appearance_title)
+
+        appearance_hint = QLabel(
+            "Themes can also be changed from the Appearance panel on the right."
+        )
+        appearance_hint.setWordWrap(True)
+        appearance_hint.setStyleSheet(f"color: {self.palette.text_muted};")
+        appearance_layout.addWidget(appearance_hint)
+
+        theme_combo = QComboBox()
+        for key in ui_theme.THEME_ORDER:
+            palette = ui_theme.PALETTES[key]
+            theme_combo.addItem(palette.name, key)
+        theme_combo.setMinimumHeight(40)
+        theme_combo.setCurrentIndex(theme_combo.findData(self.theme_key))
+        theme_combo.currentIndexChanged.connect(
+            lambda index: self.select_theme(theme_combo.itemData(index))
+        )
+        appearance_layout.addWidget(theme_combo)
+        layout.addWidget(appearance_group)
+
+        # ---- diagnostics ----
+        diagnostics_group = QFrame()
+        diagnostics_group.setObjectName("ToolCard")
+        diagnostics_layout = QVBoxLayout(diagnostics_group)
+        diagnostics_layout.setContentsMargins(18, 14, 18, 16)
+        diagnostics_layout.setSpacing(8)
+
+        diagnostics_title = QLabel("Service Diagnostics")
+        diagnostics_title.setObjectName("CardTitle")
+        diagnostics_layout.addWidget(diagnostics_title)
+
+        diagnostics_hint = QLabel(
+            "Verify that ADB and Fastboot are available on this computer."
+        )
+        diagnostics_hint.setWordWrap(True)
+        diagnostics_hint.setStyleSheet(f"color: {self.palette.text_muted};")
+        diagnostics_layout.addWidget(diagnostics_hint)
+
+        check_button = QPushButton("Check ADB / Fastboot")
+        check_button.setObjectName("Primary")
+        check_button.setMinimumHeight(42)
+        check_button.setCursor(Qt.PointingHandCursor)
+        check_button.clicked.connect(self.check_tools)
+        diagnostics_layout.addWidget(check_button)
+
+        logs_button = QPushButton("Open Operation Logs")
+        logs_button.setMinimumHeight(42)
+        logs_button.setCursor(Qt.PointingHandCursor)
+        logs_button.clicked.connect(lambda: self.navigate("Operation Logs"))
+        diagnostics_layout.addWidget(logs_button)
+
+        layout.addWidget(diagnostics_group)
+        layout.addStretch()
+
+        return page
+
+    # =====================================================
+    # FRAMELESS WINDOW RESIZING
+    # =====================================================
+
+    MARGIN = 8
+
+    def _edge_at(self, pos):
+        rect = self.rect()
+        left = pos.x() <= self.MARGIN
+        right = pos.x() >= rect.width() - self.MARGIN
+        top = pos.y() <= self.MARGIN
+        bottom = pos.y() >= rect.height() - self.MARGIN
+        return left, right, top, bottom
+
+    def mouseMoveEvent(self, event):
+        if self.isMaximized():
+            super().mouseMoveEvent(event)
+            return
+
+        if getattr(self, "_resizing", False):
+            delta = event.globalPosition().toPoint() - self._resize_origin
+            geo = self._resize_geometry
+            left, top, right, bottom = self._resize_edges
+
+            x, y, w, h = geo.x(), geo.y(), geo.width(), geo.height()
+
+            if left:
+                x += delta.x()
+                w -= delta.x()
+            if right:
+                w += delta.x()
+            if top:
+                y += delta.y()
+                h -= delta.y()
+            if bottom:
+                h += delta.y()
+
+            if w >= self.minimumWidth() and h >= self.minimumHeight():
+                self.setGeometry(x, y, w, h)
+            return
+
+        left, right, top, bottom = self._edge_at(event.position().toPoint())
+        if (left and top) or (right and bottom):
+            self.setCursor(Qt.SizeFDiagCursor)
+        elif (right and top) or (left and bottom):
+            self.setCursor(Qt.SizeBDiagCursor)
+        elif left or right:
+            self.setCursor(Qt.SizeHorCursor)
+        elif top or bottom:
+            self.setCursor(Qt.SizeVerCursor)
+        else:
+            self.unsetCursor()
+        super().mouseMoveEvent(event)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton and not self.isMaximized():
+            edges = self._edge_at(event.position().toPoint())
+            if any(edges):
+                self._resizing = True
+                self._resize_edges = edges
+                self._resize_origin = event.globalPosition().toPoint()
+                self._resize_geometry = self.geometry()
+                return
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        self._resizing = False
+        super().mouseReleaseEvent(event)
+
+    def leaveEvent(self, event):
+        if not getattr(self, "_resizing", False):
+            self.unsetCursor()
+        super().leaveEvent(event)
+
+    # =====================================================
+    # STATUS BAR
+    # =====================================================
+
+    def update_status_bar(self):
+
+        if self.shell is None:
+            return
+
+        footer = self.shell.footer
+        footer.status.set_text(self.tr("Status: Ready"))
+
+        device_text = "Device: Not Connected"
+        connected = False
+
+        try:
+            if shutil.which("adb"):
+                ok, output = run_command(["adb", "devices"])
+                if ok:
+                    for line in output.splitlines()[1:]:
+                        parts = line.split()
+                        if len(parts) >= 2 and parts[1] == "device":
+                            connected = True
+                            device_text = f"Device: {parts[0]}"
+                            break
+        except Exception:
+            pass
+
+        footer.device.set_text(self.tr(device_text))
+        footer.device.set_kind("ok" if connected else "info")
+
+        adb_available = shutil.which("adb") is not None
+        footer.adb.set_text(
+            self.tr("ADB: Available") if adb_available else self.tr("ADB: Not Installed")
+        )
+        footer.adb.set_kind("ok" if adb_available else "warn")
+
+    def start_clock(self):
+
+        if getattr(self, "_clock_timer", None) is not None:
+            return
+
+        self._clock_timer = QTimer(self)
+        self._clock_timer.setInterval(1000)
+        self._clock_timer.timeout.connect(self._tick_clock)
+        self._clock_timer.start()
+
+    def _tick_clock(self):
+
+        if self.shell is None:
+            return
+
+        now = datetime.now()
+        self.shell.footer.motto.setText(
+            now.strftime("%Y/%m/%d  %H:%M:%S") + "   •   "
+            "Innovation Today ... A Better Tomorrow™"
+        )
 
     def create_device_manager(self):
 
@@ -859,7 +855,7 @@ class AymtechPro(QMainWindow):
         note = QLabel(
             "Demo devices are simulated and cannot execute ADB commands."
         )
-        note.setStyleSheet("color: #94a3b8;")
+        note.setProperty("hint", "true")
         layout.addWidget(note)
 
         return page
@@ -933,9 +929,7 @@ class AymtechPro(QMainWindow):
         self.adb_status_label = QLabel(
             "Status: Waiting for device..."
         )
-        self.adb_status_label.setStyleSheet(
-            "color: #fbbf24; font-weight: bold;"
-        )
+        self.set_status(self.adb_status_label, "warn")
 
         layout.addWidget(self.adb_status_label)
 
@@ -970,9 +964,7 @@ class AymtechPro(QMainWindow):
         layout.addLayout(grid)
 
         output_title = QLabel("ADB Operation Output")
-        output_title.setStyleSheet(
-            "font-size: 13pt; font-weight: bold;"
-        )
+        output_title.setObjectName("SectionTitle")
 
         layout.addWidget(output_title)
 
@@ -1035,9 +1027,7 @@ class AymtechPro(QMainWindow):
                 "Status: ADB NOT FOUND"
             )
 
-            self.adb_status_label.setStyleSheet(
-                "color: #f87171; font-weight: bold;"
-            )
+            self.set_status(self.adb_status_label, "danger")
 
             return
 
@@ -1075,9 +1065,7 @@ class AymtechPro(QMainWindow):
                 f"Status: {len(authorized)} authorized device(s) connected."
             )
 
-            self.adb_status_label.setStyleSheet(
-                "color: #4ade80; font-weight: bold;"
-            )
+            self.set_status(self.adb_status_label, "ok")
 
             self.adb_output.append(
                 "ADB device list refreshed."
@@ -1094,9 +1082,7 @@ class AymtechPro(QMainWindow):
                 "Status: Authorize USB debugging on your phone."
             )
 
-            self.adb_status_label.setStyleSheet(
-                "color: #fbbf24; font-weight: bold;"
-            )
+            self.set_status(self.adb_status_label, "warn")
 
         else:
 
@@ -1109,9 +1095,7 @@ class AymtechPro(QMainWindow):
                 "Status: No real Android device detected."
             )
 
-            self.adb_status_label.setStyleSheet(
-                "color: #fbbf24; font-weight: bold;"
-            )
+            self.set_status(self.adb_status_label, "warn")
 
         self.log("ADB device list refreshed.")
 
@@ -1362,13 +1346,8 @@ class AymtechPro(QMainWindow):
             "will be added in future versions."
         )
 
-        message.setStyleSheet("""
-            background-color: #111827;
-            border: 1px solid #263247;
-            border-radius: 10px;
-            padding: 25px;
-            color: #cbd5e1;
-        """)
+        message.setObjectName("InfoPanel")
+        message.setWordWrap(True)
 
         layout.addWidget(message)
         layout.addStretch()
@@ -1891,14 +1870,7 @@ class AymtechPro(QMainWindow):
             "or remove device security."
         )
         info.setWordWrap(True)
-        info.setStyleSheet("""
-            background-color: #111827;
-            border: 1px solid #263247;
-            border-radius: 10px;
-            padding: 22px;
-            color: #cbd5e1;
-            font-size: 14px;
-        """)
+        info.setObjectName("InfoPanel")
         layout.addWidget(info)
 
         brand_label = QLabel(self.tr("Select device brand:"))
@@ -1941,10 +1913,7 @@ class AymtechPro(QMainWindow):
         layout.addWidget(recovery_button)
 
         self.screen_lock_status = QLabel("Status: NOT CONNECTED")
-        self.screen_lock_status.setStyleSheet(
-            "color: #f87171; font-size: 14px; font-weight: bold; "
-            "padding: 8px;"
-        )
+        self.set_status(self.screen_lock_status, "danger")
         layout.addWidget(self.screen_lock_status)
 
         self.screen_lock_result = QTextEdit()
@@ -1965,9 +1934,7 @@ class AymtechPro(QMainWindow):
 
             if not ok:
                 self.screen_lock_status.setText("Status: ADB ERROR")
-                self.screen_lock_status.setStyleSheet(
-                    "color: #f87171; font-weight: bold; padding: 8px;"
-                )
+                self.set_status(self.screen_lock_status, "danger")
                 self.screen_lock_result.setPlainText(
                     "ADB ERROR\n\n" + output
                 )
@@ -1988,9 +1955,7 @@ class AymtechPro(QMainWindow):
 
             if not devices:
                 self.screen_lock_status.setText("Status: NOT CONNECTED")
-                self.screen_lock_status.setStyleSheet(
-                    "color: #f87171; font-weight: bold; padding: 8px;"
-                )
+                self.set_status(self.screen_lock_status, "danger")
                 self.screen_lock_result.setPlainText(
                     "NO ANDROID DEVICE DETECTED\n\n"
                     "Connect an Android phone using USB.\n"
@@ -2000,23 +1965,19 @@ class AymtechPro(QMainWindow):
 
             authorized = [d for d in devices if d[1] == "device"]
             unauthorized = [d for d in devices if d[1] == "unauthorized"]
-            offline = [d for d in devices if d[1] == "offline"]
 
             if authorized:
                 status_text = "Status: CONNECTED"
-                status_color = "#4ade80"
+                status_kind = "ok"
             elif unauthorized:
                 status_text = "Status: UNAUTHORIZED"
-                status_color = "#facc15"
+                status_kind = "warn"
             else:
                 status_text = "Status: OFFLINE"
-                status_color = "#f87171"
+                status_kind = "danger"
 
             self.screen_lock_status.setText(status_text)
-            self.screen_lock_status.setStyleSheet(
-                f"color: {status_color}; font-size: 14px; "
-                "font-weight: bold; padding: 8px;"
-            )
+            self.set_status(self.screen_lock_status, status_kind)
 
             results = ["SMART ANDROID DEVICE DETECTION\n"]
 
@@ -2100,9 +2061,7 @@ class AymtechPro(QMainWindow):
 
         except Exception as e:
             self.screen_lock_status.setText("Status: ERROR")
-            self.screen_lock_status.setStyleSheet(
-                "color: #f87171; font-weight: bold; padding: 8px;"
-            )
+            self.set_status(self.screen_lock_status, "danger")
             self.screen_lock_result.setPlainText(
                 f"Device detection error:\n{e}"
             )
@@ -2526,10 +2485,7 @@ class AymtechPro(QMainWindow):
         )
         self.phone_screen_label.setAlignment(Qt.AlignCenter)
         self.phone_screen_label.setMinimumSize(360, 500)
-        self.phone_screen_label.setStyleSheet(
-            "background-color: #101827; color: #94a3b8;"
-            "border: 1px solid #2563eb; border-radius: 10px;"
-        )
+        self.phone_screen_label.setObjectName("PhoneFrame")
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -2635,16 +2591,10 @@ class AymtechPro(QMainWindow):
 
     def navigate(self, title):
 
-        for index, (name, button) in enumerate(
-            self.navigation_buttons
-        ):
+        if title not in self.shell.sidebar.buttons:
+            title = "Dashboard"
 
-            selected = name == title
-            button.setChecked(selected)
-
-            if selected:
-                self.pages.setCurrentIndex(index)
-
+        self.shell.show_page(title)
         self.log(f"Opened page: {title}")
 
     # =====================================================
@@ -2941,12 +2891,60 @@ No real phone is connected.
 # APPLICATION ENTRY POINT
 # =========================================================
 
+def _export_screenshots() -> None:
+    """Headless screenshot export used for visual regression checks."""
+    from PySide6.QtCore import QTimer
+
+    app = QApplication(sys.argv)
+    app.setApplicationName(APP_NAME)
+    app.aboutToQuit.connect(ui_icons.clear_caches)
+
+    window = AymtechPro()
+    window.resize(1560, 900)
+    window.show()
+    window.set_animations(False)
+
+    target = os.environ.get("AYMTECH_SHOT_DIR", "screenshots")
+    os.makedirs(target, exist_ok=True)
+
+    def capture() -> None:
+        window.select_theme("dark_blue")
+        window.navigate("Dashboard")
+        app.processEvents()
+        window.grab().save(os.path.join(target, "dashboard_dark_blue.jpg"))
+
+        window.select_theme("platinum_light")
+        app.processEvents()
+        window.grab().save(os.path.join(target, "dashboard_platinum_light.jpg"))
+
+        window.select_theme("dark_blue")
+        window.navigate("Screen Lock Service")
+        app.processEvents()
+        window.grab().save(os.path.join(target, "screen_lock_service.jpg"))
+
+        window.navigate("Device Manager")
+        app.processEvents()
+        window.grab().save(os.path.join(target, "device_manager.jpg"))
+
+        app.quit()
+
+    QTimer.singleShot(600, capture)
+    app.exec()
+
+
 if __name__ == "__main__":
+
+    import os
+
+    if "--export-screenshots" in sys.argv:
+        _export_screenshots()
+        sys.exit(0)
 
     app = QApplication(sys.argv)
 
     app.setApplicationName(APP_NAME)
-    app.setStyleSheet(STYLE)
+    app.setWindowIcon(ui_icons.make_icon("android", ui_theme.DARK_BLUE.accent, 48))
+    app.aboutToQuit.connect(ui_icons.clear_caches)
 
     window = AymtechPro()
     window.show()
