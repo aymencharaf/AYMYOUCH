@@ -9,7 +9,7 @@ import shutil
 import subprocess
 from datetime import datetime
 
-from PySide6.QtCore import Qt, QSettings, QTimer, QProcess
+from PySide6.QtCore import QEvent, Qt, QSettings, QTimer, QProcess
 from PySide6.QtWidgets import (
     QApplication,
     QScrollArea,
@@ -36,9 +36,12 @@ from tools.translations import translate_text
 
 from ui import theme as ui_theme
 from ui import icons as ui_icons
+from ui.busy import BusyOverlay, BusySpinner
 from ui.dashboard import DashboardPage
+from ui.devices import DeviceRegistry, fill_device_combo
 from ui.pages import PageShell
 from ui.shell import AppShell
+from ui.tasks import TaskRunner
 from ui.widgets import PageSubtitle, PageTitle
 
 
@@ -158,9 +161,28 @@ class AymtechPro(QMainWindow):
         self._arrow_color = None
         self.palette = ui_theme.PALETTES[self.theme_key]
         self._pending_widgets = []
+        self._header_icons = []
+
+        # background work + shared device list
+        self.runner = TaskRunner(self)
+        self.devices = DeviceRegistry(self)
+        self.devices.attach_runner(self.runner)
+        self.busy_overlay = None
 
         self.build_interface()
-        self.refresh_devices()
+
+        self.devices.start(immediate=False)
+        self.devices.devices_changed.connect(self.on_devices_changed)
+        self.devices.scan_finished.connect(self.on_scan_finished)
+        self.runner.busy_changed.connect(self.on_busy_changed)
+
+        self._busy_timer = QTimer(self)
+        self._busy_timer.setSingleShot(True)
+        self._busy_timer.setInterval(450)
+        self._busy_timer.timeout.connect(self.show_busy_overlay)
+        self.setup_busy_overlay()
+
+        self.devices.request_scan()
 
     # =====================================================
     # INTERFACE
@@ -238,6 +260,191 @@ class AymtechPro(QMainWindow):
         self.update_status_bar()
 
     # =====================================================
+    # BACKGROUND TASKS AND DEVICE STATE
+    # =====================================================
+
+    def on_busy_changed(self, busy):
+
+        if self.shell is None:
+            return
+
+        footer = self.shell.footer
+        if busy:
+            footer.status.set_text(self.tr("Status: Working..."))
+            footer.status.set_kind("warn")
+            # only veil the page when the work is actually slow
+            self._busy_timer.start()
+        else:
+            self._busy_timer.stop()
+            self.hide_busy_overlay()
+            footer.status.set_text(self.tr("Status: Ready"))
+            footer.status.set_kind("ok")
+
+    def setup_busy_overlay(self):
+        """Create the page veil that covers slow background work."""
+
+        if self.shell is None or self.busy_overlay is not None:
+            return
+
+        container = self.shell.page_container
+        self.busy_overlay = BusyOverlay(self.palette, container)
+        self.busy_overlay.set_message(self.tr("Working, please wait..."))
+        self.busy_overlay.setGeometry(container.rect())
+        container.installEventFilter(self)
+
+    def show_busy_overlay(self):
+
+        if self.busy_overlay is None or self.shell is None:
+            return
+
+        self.busy_overlay.set_message(self.tr("Working, please wait..."))
+        self.busy_overlay.setGeometry(self.shell.page_container.rect())
+        self.busy_overlay.setActive(True)
+
+    def hide_busy_overlay(self):
+
+        if self.busy_overlay is not None:
+            self.busy_overlay.setActive(False)
+
+    def eventFilter(self, obj, event):
+
+        if (
+            self.busy_overlay is not None
+            and self.shell is not None
+            and obj is self.shell.page_container
+            and event.type() == QEvent.Resize
+        ):
+            self.busy_overlay.setGeometry(obj.rect())
+
+        return super().eventFilter(obj, event)
+
+    def _device_spinners(self):
+
+        for name in ("adb_spinner", "android_spinner"):
+            spinner = getattr(self, name, None)
+            if spinner is not None:
+                yield spinner
+
+    def set_device_spinners(self, active):
+        for spinner in self._device_spinners():
+            spinner.set_active(active)
+
+    def refresh_all_devices(self):
+        """Manual refresh: spin the indicators and rescan in a worker."""
+
+        self.set_device_spinners(True)
+        self.log("Scanning Android devices...")
+        self.devices.request_scan(force=True)
+
+    def on_scan_finished(self, adb_available):
+
+        self.set_device_spinners(False)
+
+        if self.shell is None:
+            return
+
+        footer = self.shell.footer
+        footer.adb.set_text(
+            self.tr("ADB: Available") if adb_available
+            else self.tr("ADB: Not Installed")
+        )
+        footer.adb.set_kind("ok" if adb_available else "warn")
+
+    def on_devices_changed(self, devices):
+
+        # keep every device selector in sync with the registry
+        self.sync_device_selectors()
+        self.fill_device_table()
+
+        footer = self.shell.footer if self.shell is not None else None
+        if footer is not None:
+            authorized = [d for d in devices if d.state == "device"]
+            if authorized:
+                footer.device.set_text(
+                f"{self.tr('Device:')} {authorized[0].serial}"
+            )
+                footer.device.set_kind("ok")
+            elif devices:
+                footer.device.set_text(
+                    self.tr("Device: Not Authorized")
+                )
+                footer.device.set_kind("warn")
+            else:
+                footer.device.set_text(self.tr("Device: Not Connected"))
+                footer.device.set_kind("info")
+
+    def sync_device_selectors(self):
+
+        devices = self.devices.devices
+        placeholder = self.tr("No authorized device connected")
+
+        for combo in (
+            getattr(self, "adb_device_combo", None),
+            getattr(self, "android_device_combo", None),
+            getattr(self, "samsung_device_combo", None),
+            getattr(self, "qualcomm_device_combo", None),
+            getattr(self, "mediatek_device_combo", None),
+        ):
+            if combo is None:
+                continue
+            fill_device_combo(combo, devices, placeholder)
+
+        if getattr(self, "adb_status_label", None) is not None:
+            authorized = [d for d in devices if d.state == "device"]
+            unauthorized = [d for d in devices if d.state == "unauthorized"]
+            self.adb_status_label.setText(self._adb_status_text())
+
+            if authorized:
+                self.set_status(self.adb_status_label, "ok")
+            elif unauthorized:
+                self.set_status(self.adb_status_label, "warn")
+            elif not self.devices.adb_available:
+                self.set_status(self.adb_status_label, "danger")
+            else:
+                self.set_status(self.adb_status_label, "warn")
+
+        if getattr(self, "phone_screen_serial", None):
+            if self.devices.find(self.phone_screen_serial) is None:
+                self.stop_phone_screen()
+                if getattr(self, "phone_screen_status", None) is not None:
+                    self.phone_screen_status.setText(
+                        "Status: Device disconnected"
+                    )
+
+    def run_background(self, title, fn, on_done):
+        """Run *fn* in the thread pool; *on_done(result)* runs on the UI."""
+
+        self.log(f"Started: {title}")
+
+        def finished(result):
+            try:
+                on_done(result)
+            finally:
+                self.log(f"Finished: {title}")
+
+        def failed(message):
+            self.log(f"Failed: {title} - {message.splitlines()[0]}")
+            QMessageBox.critical(
+                self,
+                self.tr("Operation Failed"),
+                f"{title}\n\n{message.splitlines()[0]}",
+            )
+
+        self.runner.run(fn, finished, failed)
+
+    def selected_adb_serial(self):
+
+        if self.adb_device_combo is None:
+            return None
+
+        serial = self.adb_device_combo.currentData()
+        if serial:
+            return serial
+
+        device = self.devices.first_authorized()
+        return device.serial if device else None
+
+    # =====================================================
     # THEMING
     # =====================================================
 
@@ -278,6 +485,19 @@ class AymtechPro(QMainWindow):
                 except TypeError:
                     widget.set_palette(self.palette)
         self.update_status_bar()
+        self.retint_indicators()
+
+    def retint_indicators(self):
+        """Re-colour busy indicators after a theme change."""
+
+        for spinner in self._device_spinners():
+            spinner.set_palette(self.palette)
+
+        if getattr(self, "screen_lock_spinner", None) is not None:
+            self.screen_lock_spinner.set_palette(self.palette)
+
+        if self.busy_overlay is not None:
+            self.busy_overlay.set_palette(self.palette)
 
     def apply_theme_now(self):
 
@@ -403,6 +623,11 @@ class AymtechPro(QMainWindow):
             elif kind == "table_header":
                 widget.setText(translated)
 
+        # painted status labels are not part of the widget sweep
+        # (must run after the sweep, which would otherwise re-apply the
+        # captured English originals)
+        self.refresh_status_texts(language)
+
         # Keep navigation identifiers in English internally.
         labels = {}
         for title in list(self.shell.sidebar.buttons):
@@ -418,6 +643,69 @@ class AymtechPro(QMainWindow):
 
     def tr(self, text):
         return translate_text(text, self.current_language)
+
+    # -------------------------------------------------
+    # painted status labels (kept as keys, translated on demand)
+    # -------------------------------------------------
+
+    def _adb_status_key(self):
+
+        devices = self.devices.devices if getattr(self, "devices", None) else []
+        authorized = [d for d in devices if d.state == "device"]
+        unauthorized = [d for d in devices if d.state == "unauthorized"]
+
+        if authorized:
+            return "Status: {count} authorized device(s) connected."
+        if unauthorized:
+            return "Status: Authorize USB debugging on your phone."
+        if not self.devices.adb_available:
+            return "Status: ADB NOT FOUND"
+        return "Status: No real Android device detected."
+
+    def _adb_status_text(self, language=None):
+
+        language = language or self.current_language
+        count = len(self.devices.authorized())
+        template = translate_text(self._adb_status_key(), language)
+        return template.format(count=count)
+
+    def _screen_lock_status_key(self):
+
+        devices = self.devices.devices if getattr(self, "devices", None) else []
+        authorized = [d for d in devices if d.state == "device"]
+        unauthorized = [d for d in devices if d.state == "unauthorized"]
+
+        if authorized:
+            return "Status: CONNECTED"
+        if unauthorized:
+            return "Status: UNAUTHORIZED"
+        if not self.devices.adb_available:
+            return "Status: ADB NOT FOUND"
+        return "Status: OFFLINE"
+
+    def _phone_screen_status_text(self, text):
+
+        # live preview messages are stored in English, translated here
+        return translate_text(text, self.current_language)
+
+    def refresh_status_texts(self, language=None):
+
+        language = language or self.current_language
+
+        if getattr(self, "adb_status_label", None) is not None:
+            self.adb_status_label.setText(self._adb_status_text(language))
+
+        if getattr(self, "screen_lock_status", None) is not None:
+            self.screen_lock_status.setText(
+                translate_text(self._screen_lock_status_key(), language)
+            )
+
+        if getattr(self, "phone_screen_status", None) is not None:
+            text = getattr(self, "_phone_screen_status_key", "")
+            if text:
+                self.phone_screen_status.setText(
+                    translate_text(text, language)
+                )
 
     def set_status(self, label, kind="info"):
         """Colour a status label from the active palette."""
@@ -740,33 +1028,35 @@ class AymtechPro(QMainWindow):
     # =====================================================
 
     def update_status_bar(self):
+        """Refresh footer chrome from the cached device registry state."""
 
         if self.shell is None:
             return
 
         footer = self.shell.footer
         footer.status.set_text(self.tr("Status: Ready"))
+        footer.status.set_kind("ok")
 
-        device_text = "Device: Not Connected"
-        connected = False
+        devices = self.devices.devices if getattr(self, "devices", None) else []
+        authorized = [d for d in devices if d.state == "device"]
 
-        try:
-            if shutil.which("adb"):
-                ok, output = run_command(["adb", "devices"])
-                if ok:
-                    for line in output.splitlines()[1:]:
-                        parts = line.split()
-                        if len(parts) >= 2 and parts[1] == "device":
-                            connected = True
-                            device_text = f"Device: {parts[0]}"
-                            break
-        except Exception:
-            pass
+        if authorized:
+            footer.device.set_text(
+                f"{self.tr('Device:')} {authorized[0].serial}"
+            )
+            footer.device.set_kind("ok")
+        elif devices:
+            footer.device.set_text(self.tr("Device: Not Authorized"))
+            footer.device.set_kind("warn")
+        else:
+            footer.device.set_text(self.tr("Device: Not Connected"))
+            footer.device.set_kind("info")
 
-        footer.device.set_text(self.tr(device_text))
-        footer.device.set_kind("ok" if connected else "info")
-
-        adb_available = shutil.which("adb") is not None
+        adb_available = (
+            self.devices.adb_available
+            if getattr(self, "devices", None) is not None
+            else shutil.which("adb") is not None
+        )
         footer.adb.set_text(
             self.tr("ADB: Available") if adb_available else self.tr("ADB: Not Installed")
         )
@@ -853,7 +1143,7 @@ class AymtechPro(QMainWindow):
         layout.addWidget(self.device_table)
 
         note = QLabel(
-            "Demo devices are simulated and cannot execute ADB commands."
+            self.tr("Only authorized devices can run ADB commands.")
         )
         note.setProperty("hint", "true")
         layout.addWidget(note)
@@ -916,12 +1206,13 @@ class AymtechPro(QMainWindow):
 
         refresh_button = QPushButton("Refresh")
         refresh_button.setObjectName("Primary")
-        refresh_button.clicked.connect(
-            self.refresh_adb_device_list
-        )
+        refresh_button.clicked.connect(self.refresh_all_devices)
+
+        self.adb_spinner = BusySpinner(self.palette, 18)
 
         device_layout.addWidget(device_label)
         device_layout.addWidget(self.adb_device_combo, 1)
+        device_layout.addWidget(self.adb_spinner)
         device_layout.addWidget(refresh_button)
 
         layout.addLayout(device_layout)
@@ -976,8 +1267,6 @@ class AymtechPro(QMainWindow):
 
         layout.addWidget(self.adb_output, 1)
 
-        self.refresh_adb_device_list()
-
         return page
 
     # =====================================================
@@ -989,7 +1278,7 @@ class AymtechPro(QMainWindow):
         if self.adb_device_combo is None:
             return None
 
-        serial = self.adb_device_combo.currentData()
+        serial = self.selected_adb_serial()
 
         if not serial:
             QMessageBox.warning(
@@ -1011,93 +1300,8 @@ class AymtechPro(QMainWindow):
 
     def refresh_adb_device_list(self):
 
-        if self.adb_device_combo is None:
-            return
-
-        self.adb_device_combo.clear()
-
-        if not ADBTools.check_adb():
-
-            self.adb_device_combo.addItem(
-                "ADB not installed",
-                None
-            )
-
-            self.adb_status_label.setText(
-                "Status: ADB NOT FOUND"
-            )
-
-            self.set_status(self.adb_status_label, "danger")
-
-            return
-
-        ok, output = ADBTools.devices()
-
-        authorized = []
-        unauthorized = []
-
-        if ok:
-
-            for line in output.splitlines():
-
-                parts = line.strip().split()
-
-                if len(parts) >= 2:
-
-                    serial = parts[0]
-                    state = parts[1]
-
-                    if state == "device":
-                        authorized.append(serial)
-
-                    elif state == "unauthorized":
-                        unauthorized.append(serial)
-
-        for serial in authorized:
-            self.adb_device_combo.addItem(
-                serial,
-                serial
-            )
-
-        if authorized:
-
-            self.adb_status_label.setText(
-                f"Status: {len(authorized)} authorized device(s) connected."
-            )
-
-            self.set_status(self.adb_status_label, "ok")
-
-            self.adb_output.append(
-                "ADB device list refreshed."
-            )
-
-        elif unauthorized:
-
-            self.adb_device_combo.addItem(
-                "Device unauthorized",
-                None
-            )
-
-            self.adb_status_label.setText(
-                "Status: Authorize USB debugging on your phone."
-            )
-
-            self.set_status(self.adb_status_label, "warn")
-
-        else:
-
-            self.adb_device_combo.addItem(
-                "No authorized device connected",
-                None
-            )
-
-            self.adb_status_label.setText(
-                "Status: No real Android device detected."
-            )
-
-            self.set_status(self.adb_status_label, "warn")
-
-        self.log("ADB device list refreshed.")
+        # kept for backwards compatibility: the registry owns the scan
+        self.refresh_all_devices()
 
     # =====================================================
     # ADB OUTPUT
@@ -1129,12 +1333,12 @@ class AymtechPro(QMainWindow):
         if not serial:
             return
 
-        info = ADBTools.device_info(serial)
-
-        self.show_adb_result(
-            "DEVICE INFORMATION",
-            True,
-            info
+        self.run_background(
+            "Device information",
+            lambda: ADBTools.device_info(serial),
+            lambda info: self.show_adb_result(
+                "DEVICE INFORMATION", True, info
+            ),
         )
 
     # =====================================================
@@ -1164,15 +1368,14 @@ class AymtechPro(QMainWindow):
         if answer != QMessageBox.Yes:
             return
 
-        ok, output = ADBTools.reboot(
-            serial,
-            mode
-        )
-
-        self.show_adb_result(
-            f"REBOOT {mode.upper()}",
-            ok,
-            output or "Reboot command sent."
+        self.run_background(
+            f"Reboot {mode}",
+            lambda: ADBTools.reboot(serial, mode),
+            lambda result: self.show_adb_result(
+                f"REBOOT {mode.upper()}",
+                result[0],
+                result[1] or "Reboot command sent.",
+            ),
         )
 
     # =====================================================
@@ -1206,15 +1409,12 @@ class AymtechPro(QMainWindow):
         if answer != QMessageBox.Yes:
             return
 
-        ok, output = ADBTools.install_apk(
-            serial,
-            apk_path
-        )
-
-        self.show_adb_result(
-            "INSTALL APK",
-            ok,
-            output
+        self.run_background(
+            "Install APK",
+            lambda: ADBTools.install_apk(serial, apk_path),
+            lambda result: self.show_adb_result(
+                "INSTALL APK", result[0], result[1]
+            ),
         )
 
     # =====================================================
@@ -1241,24 +1441,23 @@ class AymtechPro(QMainWindow):
         if not destination.lower().endswith(".png"):
             destination += ".png"
 
-        ok, output = ADBTools.screenshot(
-            serial,
-            destination
+        def done(result):
+            ok, output = result if isinstance(result, tuple) else (True, result)
+            self.show_adb_result("SCREENSHOT", ok, output)
+            if ok:
+                QMessageBox.information(
+                    self,
+                    self.tr("Screenshot Saved"),
+                    self.tr(
+                        "Screenshot saved successfully:\n{path}"
+                    ).format(path=destination)
+                )
+
+        self.run_background(
+            "Screenshot",
+            lambda: ADBTools.screenshot(serial, destination),
+            done,
         )
-
-        self.show_adb_result(
-            "SCREENSHOT",
-            ok,
-            output
-        )
-
-        if ok:
-
-            QMessageBox.information(
-                self,
-                self.tr("Screenshot Saved"),
-                self.tr("Screenshot saved successfully:\n{path}").format(path=destination)
-            )
 
     # =====================================================
     # INSTALLED APPS
@@ -1271,12 +1470,12 @@ class AymtechPro(QMainWindow):
         if not serial:
             return
 
-        ok, output = ADBTools.list_apps(serial)
-
-        self.show_adb_result(
-            "INSTALLED APPLICATIONS",
-            ok,
-            output
+        self.run_background(
+            "Installed applications",
+            lambda: ADBTools.list_apps(serial),
+            lambda result: self.show_adb_result(
+                "INSTALLED APPLICATIONS", result[0], result[1]
+            ),
         )
 
     # =====================================================
@@ -1290,12 +1489,12 @@ class AymtechPro(QMainWindow):
         if not serial:
             return
 
-        ok, output = ADBTools.get_battery(serial)
-
-        self.show_adb_result(
-            "BATTERY INFORMATION",
-            ok,
-            output
+        self.run_background(
+            "Battery information",
+            lambda: ADBTools.get_battery(serial),
+            lambda result: self.show_adb_result(
+                "BATTERY INFORMATION", result[0], result[1]
+            ),
         )
 
     # =====================================================
@@ -1309,12 +1508,12 @@ class AymtechPro(QMainWindow):
         if not serial:
             return
 
-        ok, output = ADBTools.get_storage(serial)
-
-        self.show_adb_result(
-            "STORAGE INFORMATION",
-            ok,
-            output
+        self.run_background(
+            "Storage information",
+            lambda: ADBTools.get_storage(serial),
+            lambda result: self.show_adb_result(
+                "STORAGE INFORMATION", result[0], result[1]
+            ),
         )
 
     # =====================================================
@@ -1376,7 +1575,7 @@ class AymtechPro(QMainWindow):
         layout.addWidget(self.samsung_device_combo)
 
         refresh_button = QPushButton("Refresh Devices")
-        refresh_button.clicked.connect(self.refresh_samsung_devices)
+        refresh_button.clicked.connect(self.refresh_all_devices)
         layout.addWidget(refresh_button)
 
         buttons = [
@@ -1396,34 +1595,41 @@ class AymtechPro(QMainWindow):
         self.samsung_result_box.setReadOnly(True)
         layout.addWidget(self.samsung_result_box, 1)
 
-        self.refresh_samsung_devices()
-
         return page
+
+    def show_vendor_result(self, result, box=None):
+        """Render a (ok, output) tuple from a vendor tool page."""
+
+        if isinstance(result, tuple):
+            ok, output = result
+        else:
+            ok, output = True, str(result)
+
+        if box is not None:
+            box.setPlainText(output)
+
+        self.log(
+            f"Vendor operation: {'SUCCESS' if ok else 'FAILED'}"
+        )
 
     def refresh_samsung_devices(self):
 
-        self.samsung_device_combo.clear()
-
-        ok, output = ADBTools.devices()
-
-        if not ok:
-            self.samsung_result_box.setPlainText(output)
+        if self.samsung_device_combo is None:
             return
 
-        for line in output.splitlines()[1:]:
-            parts = line.split()
-
-            if len(parts) >= 2 and parts[1] == "device":
-                self.samsung_device_combo.addItem(parts[0])
-
-        if self.samsung_device_combo.count() == 0:
-            self.samsung_result_box.setPlainText(
-                "No authorized Android devices found."
-            )
+        fill_device_combo(
+            self.samsung_device_combo,
+            self.devices.devices,
+            self.tr("No authorized device connected"),
+        )
 
     def get_samsung_device(self):
 
-        serial = self.samsung_device_combo.currentText().strip()
+        serial = self.samsung_device_combo.currentData()
+
+        if not serial:
+            device = self.devices.first_authorized()
+            serial = device.serial if device else ""
 
         if not serial:
             QMessageBox.warning(
@@ -1441,9 +1647,11 @@ class AymtechPro(QMainWindow):
         if not serial:
             return
 
-        ok, output = SamsungTools.check_samsung_device(serial)
-
-        self.samsung_result_box.setPlainText(output)
+        self.run_background(
+            "Samsung device check",
+            lambda: SamsungTools.check_samsung_device(serial),
+            lambda result, box=self.samsung_result_box: self.show_vendor_result(result, box),
+        )
 
     def samsung_device_information(self):
 
@@ -1451,9 +1659,11 @@ class AymtechPro(QMainWindow):
         if not serial:
             return
 
-        ok, output = SamsungTools.device_information(serial)
-
-        self.samsung_result_box.setPlainText(output)
+        self.run_background(
+            "Samsung device information",
+            lambda: SamsungTools.device_information(serial),
+            lambda result, box=self.samsung_result_box: self.show_vendor_result(result, box),
+        )
 
     def samsung_firmware_information(self):
 
@@ -1461,9 +1671,11 @@ class AymtechPro(QMainWindow):
         if not serial:
             return
 
-        ok, output = SamsungTools.firmware_information(serial)
-
-        self.samsung_result_box.setPlainText(output)
+        self.run_background(
+            "Samsung firmware information",
+            lambda: SamsungTools.firmware_information(serial),
+            lambda result, box=self.samsung_result_box: self.show_vendor_result(result, box),
+        )
 
     def samsung_connection_check(self):
 
@@ -1471,10 +1683,12 @@ class AymtechPro(QMainWindow):
         if not serial:
             return
 
-        ok, output = SamsungTools.check_connection(serial)
-
-        self.samsung_result_box.setPlainText(output)
-         # =====================================================
+        self.run_background(
+            "Samsung connection check",
+            lambda: SamsungTools.check_connection(serial),
+            lambda result, box=self.samsung_result_box: self.show_vendor_result(result, box),
+        )
+    # =====================================================
     # QUALCOMM TOOLS PAGE
     # =====================================================
 
@@ -1497,7 +1711,7 @@ class AymtechPro(QMainWindow):
         layout.addWidget(self.qualcomm_device_combo)
 
         refresh_button = QPushButton("Refresh Devices")
-        refresh_button.clicked.connect(self.refresh_qualcomm_devices)
+        refresh_button.clicked.connect(self.refresh_all_devices)
         layout.addWidget(refresh_button)
 
         buttons = [
@@ -1517,34 +1731,26 @@ class AymtechPro(QMainWindow):
         self.qualcomm_result_box.setReadOnly(True)
         layout.addWidget(self.qualcomm_result_box, 1)
 
-        self.refresh_qualcomm_devices()
-
         return page
 
     def refresh_qualcomm_devices(self):
 
-        self.qualcomm_device_combo.clear()
-
-        ok, output = ADBTools.devices()
-
-        if not ok:
-            self.qualcomm_result_box.setPlainText(output)
+        if self.qualcomm_device_combo is None:
             return
 
-        for line in output.splitlines()[1:]:
-            parts = line.split()
-
-            if len(parts) >= 2 and parts[1] == "device":
-                self.qualcomm_device_combo.addItem(parts[0])
-
-        if self.qualcomm_device_combo.count() == 0:
-            self.qualcomm_result_box.setPlainText(
-                "No authorized Android devices found."
-            )
+        fill_device_combo(
+            self.qualcomm_device_combo,
+            self.devices.devices,
+            self.tr("No authorized device connected"),
+        )
 
     def get_qualcomm_device(self):
 
-        serial = self.qualcomm_device_combo.currentText().strip()
+        serial = self.qualcomm_device_combo.currentData()
+
+        if not serial:
+            device = self.devices.first_authorized()
+            serial = device.serial if device else ""
 
         if not serial:
             QMessageBox.warning(
@@ -1562,8 +1768,11 @@ class AymtechPro(QMainWindow):
         if not serial:
             return
 
-        ok, output = QualcommTools.check_qualcomm_device(serial)
-        self.qualcomm_result_box.setPlainText(output)
+        self.run_background(
+            "Qualcomm device check",
+            lambda: QualcommTools.check_qualcomm_device(serial),
+            lambda result, box=self.qualcomm_result_box: self.show_vendor_result(result, box),
+        )
 
     def qualcomm_device_information(self):
 
@@ -1571,8 +1780,11 @@ class AymtechPro(QMainWindow):
         if not serial:
             return
 
-        ok, output = QualcommTools.device_information(serial)
-        self.qualcomm_result_box.setPlainText(output)
+        self.run_background(
+            "Qualcomm device information",
+            lambda: QualcommTools.device_information(serial),
+            lambda result, box=self.qualcomm_result_box: self.show_vendor_result(result, box),
+        )
 
     def qualcomm_firmware_information(self):
 
@@ -1580,8 +1792,11 @@ class AymtechPro(QMainWindow):
         if not serial:
             return
 
-        ok, output = QualcommTools.firmware_information(serial)
-        self.qualcomm_result_box.setPlainText(output)
+        self.run_background(
+            "Qualcomm firmware information",
+            lambda: QualcommTools.firmware_information(serial),
+            lambda result, box=self.qualcomm_result_box: self.show_vendor_result(result, box),
+        )
 
     def qualcomm_connection_check(self):
 
@@ -1589,8 +1804,11 @@ class AymtechPro(QMainWindow):
         if not serial:
             return
 
-        ok, output = QualcommTools.check_connection(serial)
-        self.qualcomm_result_box.setPlainText(output)   
+        self.run_background(
+            "Qualcomm connection check",
+            lambda: QualcommTools.check_connection(serial),
+            lambda result, box=self.qualcomm_result_box: self.show_vendor_result(result, box),
+        )
         # =====================================================
 
     # =====================================================
@@ -1616,7 +1834,7 @@ class AymtechPro(QMainWindow):
         layout.addWidget(self.mediatek_device_combo)
 
         refresh_button = QPushButton("Refresh Devices")
-        refresh_button.clicked.connect(self.refresh_mediatek_devices)
+        refresh_button.clicked.connect(self.refresh_all_devices)
         layout.addWidget(refresh_button)
 
         buttons = [
@@ -1636,35 +1854,31 @@ class AymtechPro(QMainWindow):
         self.mediatek_result_box.setReadOnly(True)
         layout.addWidget(self.mediatek_result_box, 1)
 
-        self.refresh_mediatek_devices()
         return page
 
     def refresh_mediatek_devices(self):
 
-        self.mediatek_device_combo.clear()
-        ok, output = ADBTools.devices()
-
-        if not ok:
-            self.mediatek_result_box.setPlainText(output)
+        if self.mediatek_device_combo is None:
             return
 
-        for line in output.splitlines()[1:]:
-            parts = line.split()
-            if len(parts) >= 2 and parts[1] == "device":
-                self.mediatek_device_combo.addItem(parts[0])
-
-        if self.mediatek_device_combo.count() == 0:
-            self.mediatek_result_box.setPlainText(
-                "No authorized Android devices found."
-            )
+        fill_device_combo(
+            self.mediatek_device_combo,
+            self.devices.devices,
+            self.tr("No authorized device connected"),
+        )
 
     def get_mediatek_device(self):
 
-        serial = self.mediatek_device_combo.currentText().strip()
+        serial = self.mediatek_device_combo.currentData()
+
+        if not serial:
+            device = self.devices.first_authorized()
+            serial = device.serial if device else ""
 
         if not serial:
             QMessageBox.warning(
-                self, self.tr("No Device"),
+                self,
+                self.tr("No Device"),
                 self.tr("Please connect and select a device.")
             )
             return None
@@ -1677,8 +1891,11 @@ class AymtechPro(QMainWindow):
         if not serial:
             return
 
-        ok, output = MediaTekTools.check_mediatek_device(serial)
-        self.mediatek_result_box.setPlainText(output)
+        self.run_background(
+            "MediaTek device check",
+            lambda: MediaTekTools.check_mediatek_device(serial),
+            lambda result, box=self.mediatek_result_box: self.show_vendor_result(result, box),
+        )
 
     def mediatek_device_information(self):
 
@@ -1686,8 +1903,11 @@ class AymtechPro(QMainWindow):
         if not serial:
             return
 
-        ok, output = MediaTekTools.device_information(serial)
-        self.mediatek_result_box.setPlainText(output)
+        self.run_background(
+            "MediaTek device information",
+            lambda: MediaTekTools.device_information(serial),
+            lambda result, box=self.mediatek_result_box: self.show_vendor_result(result, box),
+        )
 
     def mediatek_firmware_information(self):
 
@@ -1695,8 +1915,11 @@ class AymtechPro(QMainWindow):
         if not serial:
             return
 
-        ok, output = MediaTekTools.firmware_information(serial)
-        self.mediatek_result_box.setPlainText(output)
+        self.run_background(
+            "MediaTek firmware information",
+            lambda: MediaTekTools.firmware_information(serial),
+            lambda result, box=self.mediatek_result_box: self.show_vendor_result(result, box),
+        )
 
     def mediatek_connection_check(self):
 
@@ -1704,8 +1927,11 @@ class AymtechPro(QMainWindow):
         if not serial:
             return
 
-        ok, output = MediaTekTools.check_connection(serial)
-        self.mediatek_result_box.setPlainText(output)
+        self.run_background(
+            "MediaTek connection check",
+            lambda: MediaTekTools.check_connection(serial),
+            lambda result, box=self.mediatek_result_box: self.show_vendor_result(result, box),
+        )
 
 
     # =====================================================
@@ -1912,9 +2138,14 @@ class AymtechPro(QMainWindow):
         recovery_button.clicked.connect(self.screen_lock_recovery_guide)
         layout.addWidget(recovery_button)
 
+        status_row = QHBoxLayout()
         self.screen_lock_status = QLabel("Status: NOT CONNECTED")
         self.set_status(self.screen_lock_status, "danger")
-        layout.addWidget(self.screen_lock_status)
+        self.screen_lock_spinner = BusySpinner(self.palette, 18)
+        status_row.addWidget(self.screen_lock_status)
+        status_row.addWidget(self.screen_lock_spinner)
+        status_row.addStretch()
+        layout.addLayout(status_row)
 
         self.screen_lock_result = QTextEdit()
         self.screen_lock_result.setReadOnly(True)
@@ -1928,313 +2159,282 @@ class AymtechPro(QMainWindow):
         layout.addStretch()
         return page
 
-    def screen_lock_detect_device(self):
-        try:
-            ok, output = ADBTools.devices()
+    # -------------------------------------------------
+    # screen lock helpers
+    # -------------------------------------------------
 
-            if not ok:
-                self.screen_lock_status.setText("Status: ADB ERROR")
-                self.set_status(self.screen_lock_status, "danger")
-                self.screen_lock_result.setPlainText(
-                    "ADB ERROR\n\n" + output
-                )
-                return
+    def _screen_lock_guard(self):
+        """Return True when an authorized device is available."""
+        device = self.devices.first_authorized()
+        if device is not None:
+            return True
 
-            devices = []
-
-            for line in output.splitlines():
-                line = line.strip()
-
-                if not line or line.startswith("List of devices"):
-                    continue
-
-                parts = line.split()
-
-                if len(parts) >= 2:
-                    devices.append((parts[0], parts[1]))
-
-            if not devices:
-                self.screen_lock_status.setText("Status: NOT CONNECTED")
-                self.set_status(self.screen_lock_status, "danger")
-                self.screen_lock_result.setPlainText(
-                    "NO ANDROID DEVICE DETECTED\n\n"
-                    "Connect an Android phone using USB.\n"
-                    "Enable USB debugging if available."
-                )
-                return
-
-            authorized = [d for d in devices if d[1] == "device"]
-            unauthorized = [d for d in devices if d[1] == "unauthorized"]
-
-            if authorized:
-                status_text = "Status: CONNECTED"
-                status_kind = "ok"
-            elif unauthorized:
-                status_text = "Status: UNAUTHORIZED"
-                status_kind = "warn"
-            else:
-                status_text = "Status: OFFLINE"
-                status_kind = "danger"
-
-            self.screen_lock_status.setText(status_text)
-            self.set_status(self.screen_lock_status, status_kind)
-
-            results = ["SMART ANDROID DEVICE DETECTION\n"]
-
-            for serial, status in devices:
-
-                results.append("=" * 45)
-                results.append(f"Serial: {serial}")
-                results.append(f"ADB Status: {status.upper()}")
-
-                if status != "device":
-                    results.append(
-                        "Device is not authorized for ADB diagnostics."
-                    )
-                    results.append("")
-                    continue
-
-                properties = {
-                    "Manufacturer": "ro.product.manufacturer",
-                    "Brand": "ro.product.brand",
-                    "Model": "ro.product.model",
-                    "Device": "ro.product.device",
-                    "Android Version": "ro.build.version.release",
-                    "SDK Version": "ro.build.version.sdk",
-                    "Security Patch": "ro.build.version.security_patch",
-                    "Board Platform": "ro.board.platform",
-                    "Hardware": "ro.hardware",
-                    "SoC Model": "ro.soc.model",
-                }
-
-                values = {}
-
-                for name, prop in properties.items():
-                    prop_ok, value = ADBTools.run([
-                        "-s", serial, "shell", "getprop", prop
-                    ])
-
-                    values[name] = (
-                        value.strip()
-                        if prop_ok and value.strip()
-                        else "Unavailable"
-                    )
-
-                platform = (
-                    values["Board Platform"] + " " +
-                    values["Hardware"] + " " +
-                    values["SoC Model"]
-                ).lower()
-
-                if any(x in platform for x in ["qcom", "qualcomm"]):
-                    chipset = "Qualcomm Snapdragon family (detected)"
-                elif "mediatek" in platform or "mt" in platform:
-                    chipset = "MediaTek family (possible)"
-                elif "exynos" in platform:
-                    chipset = "Samsung Exynos family (detected)"
-                elif any(x in platform for x in ["kirin", "hisilicon"]):
-                    chipset = "Huawei Kirin family (detected)"
-                elif any(x in platform for x in ["unisoc", "spreadtrum"]):
-                    chipset = "Unisoc family (detected)"
-                elif "tensor" in platform:
-                    chipset = "Google Tensor family (detected)"
-                else:
-                    chipset = "Unknown / Not confirmed"
-
-                results.append("\nDEVICE INFORMATION")
-
-                for name, value in values.items():
-                    results.append(f"{name}: {value}")
-
-                results.append(f"\nPROCESSOR FAMILY: {chipset}")
-                results.append(
-                    "\nDIAGNOSTIC LIMITATIONS:\n"
-                    "ADB only provides information available to an "
-                    "authorized debugging connection.\n"
-                    "A locked phone may not authorize ADB access.\n"
-                    "Processor detection is based on Android properties "
-                    "and is not a hardware-level verification."
-                )
-                results.append("")
-
-            self.screen_lock_result.setPlainText("\n".join(results))
-
-        except Exception as e:
-            self.screen_lock_status.setText("Status: ERROR")
-            self.set_status(self.screen_lock_status, "danger")
-            self.screen_lock_result.setPlainText(
-                f"Device detection error:\n{e}"
+        if not self.devices.adb_available:
+            status, kind, message = (
+                "Status: ADB NOT FOUND",
+                "danger",
+                "ADB WAS NOT FOUND\n\n"
+                "Install Android Platform Tools and add ADB to PATH.",
+            )
+        elif any(d.state == "unauthorized" for d in self.devices.devices):
+            status, kind, message = (
+                "Status: UNAUTHORIZED",
+                "warn",
+                "USB DEBUGGING NOT AUTHORIZED\n\n"
+                "Unlock the phone and accept the debugging prompt.",
+            )
+        else:
+            status, kind, message = (
+                "Status: NOT CONNECTED",
+                "danger",
+                "NO ANDROID DEVICE DETECTED\n\n"
+                "Connect an Android phone using USB.\n"
+                "Enable USB debugging if available.",
             )
 
+        self.screen_lock_status.setText(self.tr(status))
+        self.set_status(self.screen_lock_status, kind)
+        self.screen_lock_result.setPlainText(message)
+        return False
+
+    def _set_screen_lock_busy(self, busy):
+        if getattr(self, "screen_lock_spinner", None) is not None:
+            self.screen_lock_spinner.set_active(busy)
+
+    def _screen_lock_show(self, text, ok=True):
+        self._set_screen_lock_busy(False)
+        self.screen_lock_result.setPlainText(text)
+        self.log(
+            "Screen lock diagnostics completed."
+            if ok else "Screen lock diagnostics failed."
+        )
+
+    # -------------------------------------------------
+    # screen lock actions
+    # -------------------------------------------------
+
+    def screen_lock_detect_device(self):
+
+        if not self._screen_lock_guard():
+            return
+
+        self.screen_lock_status.setText(self.tr("Status: SCANNING..."))
+        self.set_status(self.screen_lock_status, "info")
+        self._set_screen_lock_busy(True)
+
+        devices = self.devices.devices
+        self.run_background(
+            "Screen lock device detection",
+            lambda: self._screen_lock_detect_worker(devices),
+            self._screen_lock_detect_done,
+        )
+
+    def _screen_lock_detect_worker(self, devices):
+
+        results = ["SMART ANDROID DEVICE DETECTION\n"]
+        properties = {
+            "Manufacturer": "ro.product.manufacturer",
+            "Brand": "ro.product.brand",
+            "Model": "ro.product.model",
+            "Device": "ro.product.device",
+            "Android Version": "ro.build.version.release",
+            "SDK Version": "ro.build.version.sdk",
+            "Security Patch": "ro.build.version.security_patch",
+            "Board Platform": "ro.board.platform",
+            "Hardware": "ro.hardware",
+            "SoC Model": "ro.soc.model",
+        }
+
+        for device in devices:
+
+            results.append("=" * 45)
+            results.append(f"Serial: {device.serial}")
+            results.append(f"ADB Status: {device.state.upper()}")
+
+            if not device.authorized:
+                results.append("Device is not authorized for ADB diagnostics.")
+                results.append("")
+                continue
+
+            values = {}
+            for name, prop in properties.items():
+                prop_ok, value = ADBTools.run(
+                    ["-s", device.serial, "shell", "getprop", prop]
+                )
+                values[name] = (
+                    value.strip() if prop_ok and value.strip() else "Unavailable"
+                )
+
+            platform = (
+                values["Board Platform"] + " " +
+                values["Hardware"] + " " +
+                values["SoC Model"]
+            ).lower()
+
+            if any(x in platform for x in ["qcom", "qualcomm"]):
+                chipset = "Qualcomm Snapdragon family (detected)"
+            elif "mediatek" in platform or "mt" in platform:
+                chipset = "MediaTek family (possible)"
+            elif "exynos" in platform:
+                chipset = "Samsung Exynos family (detected)"
+            elif any(x in platform for x in ["kirin", "hisilicon"]):
+                chipset = "Huawei Kirin family (detected)"
+            elif any(x in platform for x in ["unisoc", "spreadtrum"]):
+                chipset = "Unisoc family (detected)"
+            elif "tensor" in platform:
+                chipset = "Google Tensor family (detected)"
+            else:
+                chipset = "Unknown / Not confirmed"
+
+            results.append("\nDEVICE INFORMATION")
+            for name, value in values.items():
+                results.append(f"{name}: {value}")
+
+            results.append(f"\nPROCESSOR FAMILY: {chipset}")
+            results.append(
+                "\nDIAGNOSTIC LIMITATIONS:\n"
+                "ADB only provides information available to an "
+                "authorized debugging connection.\n"
+                "A locked phone may not authorize ADB access.\n"
+                "Processor detection is based on Android properties "
+                "and is not a hardware-level verification."
+            )
+            results.append("")
+
+        return "\n".join(results)
+
+    def _screen_lock_detect_done(self, text):
+
+        authorized = self.devices.authorized()
+        unauthorized = [
+            d for d in self.devices.devices if d.state == "unauthorized"
+        ]
+
+        if authorized:
+            self.screen_lock_status.setText(self.tr("Status: CONNECTED"))
+            self.set_status(self.screen_lock_status, "ok")
+        elif unauthorized:
+            self.screen_lock_status.setText(self.tr("Status: UNAUTHORIZED"))
+            self.set_status(self.screen_lock_status, "warn")
+        else:
+            self.screen_lock_status.setText(self.tr("Status: OFFLINE"))
+            self.set_status(self.screen_lock_status, "danger")
+
+        self._screen_lock_show(text)
 
     def screen_lock_security_diagnostics(self):
 
-        try:
-            ok, output = ADBTools.devices()
+        if not self._screen_lock_guard():
+            return
 
-            if not ok:
-                self.screen_lock_result.setPlainText(
-                    "ADB ERROR\n\n" + output
+        serials = [d.serial for d in self.devices.authorized()]
+        self._set_screen_lock_busy(True)
+        self.run_background(
+            "Android security diagnostics",
+            lambda: self._screen_lock_security_worker(serials),
+            self._screen_lock_show,
+        )
+
+    def _screen_lock_security_worker(self, serials):
+
+        results = ["ANDROID SECURITY DIAGNOSTICS\n"]
+        properties = {
+            "USB Debugging Setting": "service.adb.tcp.port",
+            "Bootloader Lock": "ro.boot.flash.locked",
+            "Verified Boot State": "ro.boot.verifiedbootstate",
+            "Bootloader State": "ro.boot.vbmeta.device_state",
+            "Android Security Patch": "ro.build.version.security_patch",
+            "Build Type": "ro.build.type",
+            "SELinux Status": "ro.boot.selinux",
+        }
+
+        for serial in serials:
+            results.append("=" * 45)
+            results.append(f"Device Serial: {serial}")
+
+            for name, prop in properties.items():
+                prop_ok, value = ADBTools.run(
+                    ["-s", serial, "shell", "getprop", prop]
                 )
-                return
-
-            devices = []
-
-            for line in output.splitlines():
-                parts = line.strip().split()
-
-                if len(parts) >= 2 and parts[1] == "device":
-                    devices.append(parts[0])
-
-            if not devices:
-                self.screen_lock_result.setPlainText(
-                    "No authorized Android device detected.\n\n"
-                    "Connect a device and authorize USB debugging."
-                )
-                return
-
-            results = ["ANDROID SECURITY DIAGNOSTICS\n"]
-
-            properties = {
-                "USB Debugging Setting": "service.adb.tcp.port",
-                "Bootloader Lock": "ro.boot.flash.locked",
-                "Verified Boot State": "ro.boot.verifiedbootstate",
-                "Bootloader State": "ro.boot.vbmeta.device_state",
-                "Android Security Patch": "ro.build.version.security_patch",
-                "Build Type": "ro.build.type",
-                "SELinux Status": "ro.boot.selinux",
-            }
-
-            for serial in devices:
-
-                results.append("=" * 45)
-                results.append(f"Device Serial: {serial}")
-
-                for name, prop in properties.items():
-
-                    prop_ok, value = ADBTools.run([
-                        "-s", serial, "shell", "getprop", prop
-                    ])
-
-                    value = value.strip() if prop_ok else ""
-                    results.append(
-                        f"{name}: {value if value else 'Unavailable / Not exposed'}"
-                    )
-
-                root_ok, root_output = ADBTools.run([
-                    "-s", serial, "shell", "su", "-c", "id"
-                ], timeout=10)
-
-                if root_ok and "uid=0" in root_output:
-                    root_status = "Root access available"
-                else:
-                    root_status = "Root access not confirmed"
-
-                results.append(f"Root Indicator: {root_status}")
-
+                value = value.strip() if prop_ok else ""
                 results.append(
-                    "\nNOTES:\n"
-                    "These values are read-only diagnostic indicators.\n"
-                    "Unavailable properties do not prove that a device "
-                    "is locked or secure.\n"
-                    "Root detection is not conclusive on every Android device."
+                    f"{name}: {value if value else 'Unavailable / Not exposed'}"
                 )
 
-            self.screen_lock_result.setPlainText("\n".join(results))
-
-        except Exception as e:
-            self.screen_lock_result.setPlainText(
-                f"Security diagnostics error:\n{e}"
+            root_ok, root_output = ADBTools.run(
+                ["-s", serial, "shell", "su", "-c", "id"], timeout=10
+            )
+            root_status = (
+                "Root access available"
+                if root_ok and "uid=0" in root_output
+                else "Root access not confirmed"
+            )
+            results.append(f"Root Indicator: {root_status}")
+            results.append(
+                "\nNOTES:\n"
+                "These values are read-only diagnostic indicators.\n"
+                "Unavailable properties do not prove that a device "
+                "is locked or secure.\n"
+                "Root detection is not conclusive on every Android device."
             )
 
+        return "\n".join(results)
 
     def screen_lock_information(self):
 
-        try:
-            ok, output = ADBTools.devices()
+        if not self._screen_lock_guard():
+            return
 
-            if not ok:
-                self.screen_lock_result.setPlainText(
-                    "ADB ERROR\n\n" + output
-                )
-                return
+        serials = [d.serial for d in self.devices.authorized()]
+        self._set_screen_lock_busy(True)
+        self.run_background(
+            "Android lock information",
+            lambda: self._screen_lock_info_worker(serials),
+            self._screen_lock_show,
+        )
 
-            devices = []
+    def _screen_lock_info_worker(self, serials):
 
-            for line in output.splitlines():
-                parts = line.strip().split()
+        results = ["ANDROID LOCK INFORMATION\n"]
 
-                if len(parts) >= 2 and parts[1] == "device":
-                    devices.append(parts[0])
+        for serial in serials:
+            results.append("=" * 45)
+            results.append(f"Device: {serial}")
 
-            if not devices:
-                self.screen_lock_result.setPlainText(
-                    "No authorized Android device detected."
-                )
-                return
-
-            results = ["ANDROID LOCK INFORMATION\n"]
-
-            for serial in devices:
-
-                results.append("=" * 45)
-                results.append(f"Device: {serial}")
-
-                lock_ok, lock_output = ADBTools.run([
-                    "-s", serial,
-                    "shell", "dumpsys", "window"
-                ], timeout=20)
-
-                lock_state = "UNKNOWN"
-
-                if lock_ok:
-                    text = lock_output.lower()
-
-                    if "mshowinglockscreen=true" in text:
-                        lock_state = "LOCKED (reported by WindowManager)"
-                    elif "mshowinglockscreen=false" in text:
-                        lock_state = "NOT SHOWING LOCK SCREEN"
-
-                results.append(f"Screen Lock State: {lock_state}")
-
-                keyguard_ok, keyguard_output = ADBTools.run([
-                    "-s", serial,
-                    "shell", "dumpsys", "trust"
-                ], timeout=20)
-
-                if keyguard_ok:
-                    trust_text = keyguard_output.lower()
-
-                    if "device locked" in trust_text:
-                        results.append(
-                            "Trust Service: Device reports locked"
-                        )
-                    elif "device unlocked" in trust_text:
-                        results.append(
-                            "Trust Service: Device reports unlocked"
-                        )
-                    else:
-                        results.append(
-                            "Trust Service: State not confirmed"
-                        )
-                else:
-                    results.append(
-                        "Trust Service: Information unavailable"
-                    )
-
-                results.append(
-                    "\nIMPORTANT:\n"
-                    "ADB access does not prove that the screen is unlocked.\n"
-                    "WindowManager output may vary across Android versions.\n"
-                    "UNKNOWN means the lock state could not be verified."
-                )
-
-            self.screen_lock_result.setPlainText("\n".join(results))
-
-        except Exception as e:
-            self.screen_lock_result.setPlainText(
-                f"Lock information error:\n{e}"
+            lock_ok, lock_output = ADBTools.run(
+                ["-s", serial, "shell", "dumpsys", "window"], timeout=20
             )
+            lock_state = "UNKNOWN"
+            if lock_ok:
+                text = lock_output.lower()
+                if "mshowinglockscreen=true" in text:
+                    lock_state = "LOCKED (reported by WindowManager)"
+                elif "mshowinglockscreen=false" in text:
+                    lock_state = "NOT SHOWING LOCK SCREEN"
+            results.append(f"Screen Lock State: {lock_state}")
+
+            keyguard_ok, keyguard_output = ADBTools.run(
+                ["-s", serial, "shell", "dumpsys", "trust"], timeout=20
+            )
+            if keyguard_ok:
+                trust_text = keyguard_output.lower()
+                if "device locked" in trust_text:
+                    results.append("Trust Service: Device reports locked")
+                elif "device unlocked" in trust_text:
+                    results.append("Trust Service: Device reports unlocked")
+                else:
+                    results.append("Trust Service: State not confirmed")
+            else:
+                results.append("Trust Service: Information unavailable")
+
+            results.append(
+                "\nIMPORTANT:\n"
+                "ADB access does not prove that the screen is unlocked.\n"
+                "WindowManager output may vary across Android versions.\n"
+                "UNKNOWN means the lock state could not be verified."
+            )
+
+        return "\n".join(results)
 
     def screen_lock_recovery_guide(self):
 
@@ -2301,13 +2501,17 @@ class AymtechPro(QMainWindow):
         self.android_device_combo = QComboBox()
 
         refresh_button = QPushButton("Refresh Devices")
-        refresh_button.clicked.connect(
-            self.refresh_android_devices
-        )
+        refresh_button.clicked.connect(self.refresh_all_devices)
+
+        self.android_spinner = BusySpinner(self.palette, 18)
+
+        device_row = QHBoxLayout()
+        device_row.addWidget(self.android_device_combo, 1)
+        device_row.addWidget(self.android_spinner)
+        device_row.addWidget(refresh_button)
 
         layout.addWidget(QLabel("Connected Android Device"))
-        layout.addWidget(self.android_device_combo)
-        layout.addWidget(refresh_button)
+        layout.addLayout(device_row)
 
         buttons = [
             ("Full Diagnostic", self.android_full_diagnostic),
@@ -2328,8 +2532,6 @@ class AymtechPro(QMainWindow):
 
         layout.addWidget(self.android_result_box, 1)
 
-        self.refresh_android_devices()
-
         return page
 
     # =====================================================
@@ -2338,30 +2540,38 @@ class AymtechPro(QMainWindow):
 
     def refresh_android_devices(self):
 
-        self.android_device_combo.clear()
-
-        ok, output = ADBTools.devices()
-
-        if not ok:
-            self.android_result_box.setPlainText(output)
+        if self.android_device_combo is None:
             return
 
-        for line in output.splitlines()[1:]:
-
-            parts = line.split()
-
-            if len(parts) >= 2 and parts[1] == "device":
-                self.android_device_combo.addItem(parts[0])
+        fill_device_combo(
+            self.android_device_combo,
+            self.devices.devices,
+            self.tr("No authorized device connected"),
+        )
 
         if self.android_device_combo.count() == 0:
-            self.android_result_box.setPlainText(
-                "No authorized Android devices found.\n"
-                "Connect a phone and enable USB debugging."
-            )
+            self.log("No authorized Android devices found.")
+
+    def show_android_result(self, result):
+
+        if isinstance(result, tuple):
+            ok, output = result
+        else:
+            ok, output = True, str(result)
+
+        if self.android_result_box is not None:
+            self.android_result_box.setPlainText(output)
+
+        if not ok:
+            self.log("Android operation failed.")
 
     def get_android_device(self):
 
-        serial = self.android_device_combo.currentText().strip()
+        serial = self.android_device_combo.currentData()
+
+        if not serial:
+            device = self.devices.first_authorized()
+            serial = device.serial if device else ""
 
         if not serial:
             QMessageBox.warning(
@@ -2379,9 +2589,11 @@ class AymtechPro(QMainWindow):
         if not serial:
             return
 
-        ok, output = AndroidTools.full_diagnostic(serial)
-        self.android_result_box.setPlainText(output)
-        self.log("Android full diagnostic completed.")
+        self.run_background(
+            "Full diagnostic",
+            lambda: AndroidTools.full_diagnostic(serial),
+            self.show_android_result,
+        )
 
     def android_device_information(self):
 
@@ -2389,9 +2601,11 @@ class AymtechPro(QMainWindow):
         if not serial:
             return
 
-        output = ADBTools.device_info(serial)
-        self.android_result_box.setPlainText(output)
-        self.log("Android device information requested.")
+        self.run_background(
+            "Device information",
+            lambda: ADBTools.device_info(serial),
+            self.show_android_result,
+        )
 
     def android_battery_health(self):
 
@@ -2399,9 +2613,11 @@ class AymtechPro(QMainWindow):
         if not serial:
             return
 
-        ok, output = AndroidTools.battery_health(serial)
-        self.android_result_box.setPlainText(output)
-        self.log("Android battery information requested.")
+        self.run_background(
+            "Battery health",
+            lambda: AndroidTools.battery_health(serial),
+            self.show_android_result,
+        )
 
     def android_storage_analysis(self):
 
@@ -2409,9 +2625,11 @@ class AymtechPro(QMainWindow):
         if not serial:
             return
 
-        ok, output = AndroidTools.storage_analysis(serial)
-        self.android_result_box.setPlainText(output)
-        self.log("Android storage analysis requested.")
+        self.run_background(
+            "Storage analysis",
+            lambda: AndroidTools.storage_analysis(serial),
+            self.show_android_result,
+        )
 
     def android_installed_apps(self):
 
@@ -2419,9 +2637,11 @@ class AymtechPro(QMainWindow):
         if not serial:
             return
 
-        ok, output = AndroidTools.installed_apps(serial)
-        self.android_result_box.setPlainText(output)
-        self.log("Android installed apps listed.")
+        self.run_background(
+            "Installed applications",
+            lambda: AndroidTools.installed_apps(serial),
+            self.show_android_result,
+        )
     # =====================================================
     # LOGS PAGE
     # =====================================================
@@ -2597,6 +2817,19 @@ class AymtechPro(QMainWindow):
         self.shell.show_page(title)
         self.log(f"Opened page: {title}")
 
+        # pick up a phone plugged in while another page was open
+        if title in (
+            "Device Manager",
+            "ADB Tools",
+            "Live Phone Screen",
+            "Android Tools",
+            "Screen Lock Service",
+            "Samsung Tools",
+            "Qualcomm Tools",
+            "MediaTek Tools",
+        ):
+            self.devices.request_scan()
+
     # =====================================================
     # LOGGING
     # =====================================================
@@ -2617,37 +2850,43 @@ class AymtechPro(QMainWindow):
 
     def check_tools(self):
 
-        results = []
+        def worker():
+            results = []
 
-        for tool, args in [
-            ("ADB", ["adb", "version"]),
-            ("Fastboot", ["fastboot", "--version"]),
-        ]:
+            for tool, args in [
+                ("ADB", ["adb", "version"]),
+                ("Fastboot", ["fastboot", "--version"]),
+            ]:
 
-            path = shutil.which(args[0])
+                path = shutil.which(args[0])
 
-            if path:
+                if path:
 
-                ok, output = run_command(args)
+                    ok, output = run_command(args)
 
-                results.append(
-                    f"{tool}: {'AVAILABLE' if ok else 'ERROR'}\n"
-                    f"Path: {path}\n"
-                    f"{output}"
-                )
+                    results.append(
+                        f"{tool}: {'AVAILABLE' if ok else 'ERROR'}\n"
+                        f"Path: {path}\n"
+                        f"{output}"
+                    )
 
-            else:
+                else:
 
-                results.append(
-                    f"{tool}: NOT FOUND\n"
-                    "Install Android Platform Tools."
-                )
+                    results.append(
+                        f"{tool}: NOT FOUND\n"
+                        "Install Android Platform Tools."
+                    )
 
-        QMessageBox.information(
-            self,
-            self.tr("Tool Status"),
-            "\n\n".join(results)
-        )
+            return "\n\n".join(results)
+
+        def done(text):
+            QMessageBox.information(
+                self,
+                self.tr("Tool Status"),
+                text
+            )
+
+        self.run_background("Tool check", worker, done)
 
         self.log("Checked ADB and Fastboot.")
 
@@ -2656,77 +2895,23 @@ class AymtechPro(QMainWindow):
     # =====================================================
 
     def refresh_devices(self):
+        """Ask the device registry for a fresh scan and redraw the table."""
 
         if self.device_table is None:
             return
 
-        self.device_table.setRowCount(0)
         self.log("Scanning Android devices...")
+        self.fill_device_table()
+        self.devices.request_scan(force=True)
 
-        devices = []
+    def fill_device_table(self):
 
-        if shutil.which("adb"):
+        if self.device_table is None:
+            return
 
-            ok, output = run_command([
-                "adb",
-                "devices",
-                "-l"
-            ])
+        devices = self.devices.devices
 
-            if ok:
-
-                for line in output.splitlines()[1:]:
-
-                    line = line.strip()
-
-                    if not line or line.startswith("*"):
-                        continue
-
-                    parts = line.split()
-
-                    if len(parts) >= 2:
-
-                        devices.append({
-                            "serial": parts[0],
-                            "state": parts[1],
-                            "details": " ".join(parts[2:])
-                        })
-
-        self.show_devices(
-            devices,
-            "ADB scan completed."
-        )
-
-        if not devices:
-
-            row = self.device_table.rowCount()
-            self.device_table.insertRow(row)
-
-            values = [
-                "DEMO-ANDROID-001",
-                "demo",
-                "Samsung Galaxy S24 (Virtual)"
-            ]
-
-            for col, value in enumerate(values):
-
-                self.device_table.setItem(
-                    row,
-                    col,
-                    QTableWidgetItem(value)
-                )
-
-            self.device_table.selectRow(row)
-            self.log("Demo Android device loaded.")
-
-        self.filter_devices()
-
-    # =====================================================
-    # DISPLAY DEVICES
-    # =====================================================
-
-    def show_devices(self, devices, output):
-
+        self.device_table.blockSignals(True)
         self.device_table.setRowCount(0)
 
         for device in devices:
@@ -2734,21 +2919,26 @@ class AymtechPro(QMainWindow):
             row = self.device_table.rowCount()
             self.device_table.insertRow(row)
 
-            values = [
-                device["serial"],
-                device["state"],
-                device["details"]
-            ]
-
-            for col, value in enumerate(values):
-
+            for col, value in enumerate(
+                (device.serial, device.state, device.details)
+            ):
                 self.device_table.setItem(
                     row,
                     col,
                     QTableWidgetItem(value)
                 )
 
-        self.log(output)
+        self.device_table.blockSignals(False)
+
+        if not devices and self.info_box is not None:
+            self.info_box.setPlainText(
+                self.tr(
+                    "No Android device detected.\n\n"
+                    "Connect a phone over USB and enable USB debugging."
+                )
+            )
+
+        self.filter_devices()
 
     # =====================================================
     # FILTER DEVICES
@@ -2784,10 +2974,7 @@ class AymtechPro(QMainWindow):
 
     def load_device_information(self):
 
-        if self.device_table is None:
-            return
-
-        if self.info_box is None:
+        if self.device_table is None or self.info_box is None:
             return
 
         row = self.device_table.currentRow()
@@ -2804,37 +2991,6 @@ class AymtechPro(QMainWindow):
         serial = serial_item.text()
         state = state_item.text()
 
-        if state == "demo":
-
-            demo_info = """
-========================================
-          AYMTECH PRO
-          DEMO DEVICE
-========================================
-
-Manufacturer : Samsung
-Brand        : Samsung
-Model        : SM-S921B
-Device       : Galaxy S24
-Android      : 14
-SDK Version  : 34
-Build ID     : UP1A.231005.007
-
-Connection   : DEMO MODE
-Status       : SIMULATED DEVICE
-
-----------------------------------------
-
-This is a virtual device for testing
-the AYMTECH PRO interface.
-
-No real phone is connected.
-"""
-
-            self.info_box.setPlainText(demo_info)
-            self.log("Demo device information displayed.")
-            return
-
         if state != "device":
 
             self.info_box.setPlainText(
@@ -2844,46 +3000,52 @@ No real phone is connected.
             )
             return
 
-        properties = [
-            ("Manufacturer", "ro.product.manufacturer"),
-            ("Brand", "ro.product.brand"),
-            ("Model", "ro.product.model"),
-            ("Device", "ro.product.device"),
-            ("Android Version", "ro.build.version.release"),
-            ("SDK Version", "ro.build.version.sdk"),
-            ("Build ID", "ro.build.display.id"),
-            ("Security Patch", "ro.build.version.security_patch"),
-            ("Serial Number", "ro.serialno"),
-        ]
+        self.info_box.setPlainText(
+            f"Reading device properties for {serial}..."
+        )
 
-        lines = [
-            "========================================",
-            "       AYMTECH PRO - DEVICE INFO",
-            "========================================",
-            f"ADB Serial: {serial}",
-            ""
-        ]
+        def worker():
+            properties = [
+                ("Manufacturer", "ro.product.manufacturer"),
+                ("Brand", "ro.product.brand"),
+                ("Model", "ro.product.model"),
+                ("Device", "ro.product.device"),
+                ("Android Version", "ro.build.version.release"),
+                ("SDK Version", "ro.build.version.sdk"),
+                ("Build ID", "ro.build.id"),
+                ("Security Patch", "ro.build.version.security_patch"),
+                ("Serial Number", "ro.serialno"),
+            ]
 
-        for label, prop in properties:
+            lines = [
+                "========================================",
+                "       AYMTECH PRO - DEVICE INFO",
+                "========================================",
+                f"ADB Serial: {serial}",
+                ""
+            ]
 
-            ok, value = run_command([
-                "adb",
-                "-s",
-                serial,
-                "shell",
-                "getprop",
-                prop
-            ])
+            for label, prop in properties:
 
-            lines.append(
-                f"{label}: "
-                f"{value if ok and value else 'Unavailable'}"
-            )
+                ok, value = ADBTools.run(
+                    ["-s", serial, "shell", "getprop", prop]
+                )
 
-        self.info_box.setPlainText("\n".join(lines))
+                lines.append(
+                    f"{label}: "
+                    f"{value if ok and value else 'Unavailable'}"
+                )
 
-        self.log(
-            f"Read device information: {serial}"
+            return "\n".join(lines)
+
+        def done(text):
+            if self.info_box is not None:
+                self.info_box.setPlainText(text)
+
+        self.run_background(
+            f"Device information ({serial})",
+            worker,
+            done
         )
 
 

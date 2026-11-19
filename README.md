@@ -56,6 +56,11 @@ transparency and animation preferences persist through `QSettings`.
 - Screen lock service: device detection, security diagnostics, lock
   information and official recovery guidance.
 - Operation log with timestamps.
+- Every ADB read runs on a worker thread: the window never freezes, a spinner
+  shows on the device row, and long operations dim the page with a
+  *Working, please wait...* overlay.
+- One shared device registry polls `adb devices -l`, so a phone plugged in
+  after start-up appears on every page (and the status bar) within seconds.
 
 ## Project layout
 ```
@@ -66,6 +71,9 @@ ui/shell.py          # header, sidebar, theme dock, footer
 ui/dashboard.py      # dashboard view
 ui/pages.py          # page wrapper
 ui/icons.py          # QPainter vector icon set
+ui/tasks.py          # QThreadPool runner for background ADB work
+ui/devices.py        # shared device registry + combo-box binding
+ui/busy.py           # inline spinner and page busy overlay
 assets/              # logo, mascot and background artwork
 tools/               # ADB/tool logic and translations
 ```
