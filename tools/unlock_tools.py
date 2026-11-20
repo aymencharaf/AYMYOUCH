@@ -22,6 +22,117 @@ from datetime import datetime
 from .adb_tools import ADBTools
 
 
+# Plain-language capability matrix, shown at the top of the Unlock & FRP page.
+# Every row answers the question a technician actually asks: "does this remove
+# the lock on the phone in front of me?"  Only three rows are a hard YES.
+CAPABILITIES = [
+    # (operation, verdict, explanation)
+    (
+        "Swipe / no lock screen",
+        "YES",
+        "locksettings set-disabled removes a non-secure swipe lock over ADB.",
+    ),
+    (
+        "PIN / pattern / password - phone already unlocked",
+        "YES",
+        "locksettings clear works while the ADB session is authorised, i.e. "
+        "when the credential is already known.",
+    ),
+    (
+        "Known PIN on a refurbished unit",
+        "YES",
+        "A temporary PIN can be set or removed before the phone is resold.",
+    ),
+    (
+        "PIN / pattern / password - phone parked on the lock screen",
+        "NO",
+        "Android 6+ uses file-based encryption. ADB is not authorised on the "
+        "lock screen and the credential is bound to the hardware keymaster.",
+    ),
+    (
+        "FRP / Google account lock",
+        "NO",
+        "FRP is a server-signed bootloader flag. Only the account "
+        "credentials, the manufacturer's proof-of-purchase service or a "
+        "chip-level procedure on the board can clear it.",
+    ),
+    (
+        "Samsung / Xiaomi / Huawei account lock",
+        "NO",
+        "Vendor account locks are verified online by the bootloader. Nothing "
+        "sent over ADB reaches that check.",
+    ),
+    (
+        "Bootloader unlock",
+        "SOMETIMES",
+        "Only on devices whose OEM unlocking toggle is enabled: fastboot "
+        "flashing unlock. Erases user data. Samsung has no fastboot path.",
+    ),
+    (
+        "Erase the frp partition with fastboot",
+        "SOMETIMES",
+        "Only when the bootloader already accepts write commands, i.e. it is "
+        "already unlocked - and in that state FRP is normally not pending. A "
+        "locked, FRP-pending phone rejects flash/erase/frp and -w.",
+    ),
+    (
+        "Knox / MDM enrolment",
+        "NO",
+        "Enrolment lives in the vendor security partition. Only the enrolling "
+        "organisation or an authorised service centre can release it.",
+    ),
+]
+
+VERDICT_TITLES = {
+    "YES": "REMOVED BY THIS TOOL",
+    "SOMETIMES": "ONLY WHEN THE OEM ALLOWS IT",
+    "NO": "NOT POSSIBLE OVER ADB",
+}
+
+
+def capability_report():
+    """Formatted capability matrix for the Unlock & FRP console."""
+
+    lines = [
+        "========== WHAT THIS TOOL CAN AND CANNOT DO ==========",
+        "",
+        "Direct answer: NO. AYMTECH PRO does not delete the screen lock or",
+        "FRP on a phone that is actually locked. It removes the lock only",
+        "when Android itself allows it, and it states the truth for every",
+        "other case instead of showing a button that cannot work.",
+        "",
+    ]
+    for verdict in ("YES", "SOMETIMES", "NO"):
+        rows = [row for row in CAPABILITIES if row[1] == verdict]
+        if not rows:
+            continue
+        lines.append(VERDICT_TITLES[verdict])
+        for operation, _verdict, explanation in rows:
+            lines.append(f"  [{verdict:9}] {operation}")
+            lines.append(f"             {explanation}")
+        lines.append("")
+
+    lines.extend([
+        "WHY THERE IS NO 'REMOVE FRP' BUTTON",
+        "  A button claiming to do it would either do nothing, or it would",
+        "  run a chip-level exploit that needs the phone opened, test points",
+        "  shorted and a paid unlock server. Those services exist and repair",
+        "  shops use them for an owner who can prove purchase. This tool does",
+        "  not ship one: it breaks on the next security patch, it damages",
+        "  units, and it is illegal in most countries.",
+        "",
+        "WHAT TO DO FOR A LOCKED PHONE",
+        "  1. Ask for the account credentials or the original receipt.",
+        "  2. Google / Samsung / Xiaomi support clears FRP after proof of",
+        "     purchase - free, official and permanent.",
+        "  3. A full signed firmware flash from an authorised service centre",
+        "     repairs corrupted firmware; it does not clear FRP.",
+        "  4. Chip-level service (EDL / JTAG / ISP) only with written",
+        "     authorisation from the owner and the local rules.",
+    ])
+    return "\n".join(lines)
+
+
 class UnlockTools:
 
     # ------------------------------------------------------------------

@@ -41,7 +41,7 @@ from tools.firmware_center import FirmwareCenter
 from tools.ios_tools import IOSTools
 from tools.network_tools import NetworkTools
 from tools.translations import translate_text
-from tools.unlock_tools import UnlockTools
+from tools.unlock_tools import UnlockTools, capability_report
 
 from ui import theme as ui_theme
 from ui import icons as ui_icons
@@ -60,7 +60,7 @@ from ui.widgets import PageSubtitle, PageTitle
 # =========================================================
 
 APP_NAME = "AYMTECH PRO"
-APP_VERSION = "2.2.1"
+APP_VERSION = "2.2.2"
 
 # The application stylesheet is generated per theme by
 # ui.theme.build_stylesheet(); see AymtechPro.apply_styles().
@@ -3594,11 +3594,19 @@ class AymtechPro(QMainWindow):
         tool.with_device_selector("Connected Device")
 
         tool.add_note(
-            "This page reports what the phone's own firmware says and runs only "
-            "the commands Android supports. It never bypasses a lock: modern "
-            "devices with FBE encryption and verified boot cannot be unlocked "
-            "from ADB.",
-            "hint",
+            "Straight answer: AYMTECH PRO does NOT delete the screen lock or "
+            "FRP on a locked phone. It removes a lock only when Android itself "
+            "allows it, and it prints the honest verdict for every other case. "
+            "Press \u201cWhat This Tool Can & Cannot Do\u201d below.",
+            "warn",
+        )
+
+        tool.add_section(
+            "CAPABILITY - READ THIS FIRST",
+            [
+                ("What This Tool Can and Cannot Do", self.unlock_capabilities),
+                ("FRP Removal Explained", self.unlock_frp_explained),
+            ],
         )
 
         tool.add_section(
@@ -3630,7 +3638,6 @@ class AymtechPro(QMainWindow):
         tool.add_section(
             "OFFICIAL RECOVERY PATHS",
             [
-                ("FRP Removal Explained", self.unlock_frp_explained),
                 ("Samsung Service Guide", self.show_samsung_guide),
                 ("Knox Note", self.unlock_knox_note),
             ],
@@ -3803,6 +3810,13 @@ class AymtechPro(QMainWindow):
             lambda: UnlockTools.set_pin(serial, pin),
             lambda result: self.unlock_show(result, "SET PIN"),
         )
+
+    def unlock_capabilities(self):
+
+        text = capability_report()
+        if self.unlock_result_box is not None:
+            self.unlock_result_box.setPlainText(text)
+        self.log("Unlock service: capability matrix shown")
 
     def unlock_frp_explained(self):
 

@@ -600,4 +600,9 @@ def build_stylesheet(p: Palette, opacity: float = 0.9, arrow: str = "") -> str:
     QLabel[hint="true"] {{
         color: {muted};
     }}
+
+    QLabel[warn="true"] {{
+        color: {p.warn};
+        font-weight: 600;
+    }}
     """
