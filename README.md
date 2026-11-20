@@ -1,4 +1,4 @@
-# AYMTECH PRO 2.2.1
+# AYMTECH PRO 2.2.2
 
 A Windows desktop toolkit for mobile repair technicians, built with PySide6.
 Version 2.0 introduces a completely rebuilt interface in a "holographic tech"
@@ -63,6 +63,13 @@ is generated from a single `Palette` object in `ui/theme.py`, so switching a
 theme recolours the whole application instantly. Theme, language, background,
 transparency and animation preferences persist through `QSettings`.
 
+## New in 2.2.2 – explicit lock/FRP capability matrix
+- The **Unlock & FRP** page now starts with a red-flagged answer and a
+  *What This Tool Can and Cannot Do* button. It prints, line by line, which
+  locks the app really removes, which depend on the manufacturer, and which
+  are impossible over ADB — with the technical reason and the official path
+  for each one. No "Remove FRP" button that pretends to work.
+
 ## New in 2.2.1 – cleaner workspace
 - **The Themes dock is hidden** so the tool pages get the full window width.
   Theme, background, transparency and animation controls now live in
@@ -88,8 +95,11 @@ transparency and animation preferences persist through `QSettings`.
   state, restart modes, and partition **flash / erase / format** behind a
   typed confirmation.
 - **Unlock & FRP** – an honest lock report (bootloader, verified boot, Knox
-  warranty bit, FRP, signed-in accounts, device admins/MDM), the only two lock
+  warranty bit, FRP, signed-in accounts, device admins/MDM), the only lock
   operations Android actually supports, and the official removal paths.
+  The page opens with a **capability matrix**: which locks this tool really
+  removes (swipe lock, a PIN you already know) and which it cannot (a locked
+  screen, FRP, vendor account locks, Knox/MDM), plus the reason for each.
 - **Device Control** – key events, text input, Wi-Fi / data / airplane toggles,
   stay-awake, animation scale, settings shortcuts and wireless ADB pairing.
 - **Packages & Files** – user/system package lists, app info, install,
