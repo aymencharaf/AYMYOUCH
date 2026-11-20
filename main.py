@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QLineEdit,
     QComboBox,
+    QCheckBox,
     QInputDialog,
     QFileDialog,
 )
@@ -59,11 +60,25 @@ from ui.widgets import PageSubtitle, PageTitle
 # =========================================================
 
 APP_NAME = "AYMTECH PRO"
-APP_VERSION = "2.2.0"
+APP_VERSION = "2.2.1"
 
 # The application stylesheet is generated per theme by
 # ui.theme.build_stylesheet(); see AymtechPro.apply_styles().
 STYLE = ""
+
+
+# =========================================================
+# INTERFACE SWITCHES
+# =========================================================
+
+# The appearance panel used to take a third of the window.  Themes, background,
+# transparency and animation controls now live in Settings instead, so the tool
+# pages get the full width.  Flip this to True to bring the dock back.
+SHOW_THEME_PANEL = False
+
+# Keep the theme *preview cards* hidden even when the panel itself is shown
+# (the background selector and the switches stay available).
+SHOW_THEME_CARDS = True
 
 
 # =========================================================
@@ -202,7 +217,12 @@ class AymtechPro(QMainWindow):
         self.palette = ui_theme.PALETTES[self.theme_key]
 
         self.panel_opacity = 0.92 if self.opacity > 0.5 else 1.0
-        self.shell = AppShell(self.palette, self.panel_opacity)
+        self.shell = AppShell(
+            self.palette,
+            self.panel_opacity,
+            show_themes=SHOW_THEME_CARDS,
+            show_dock=SHOW_THEME_PANEL,
+        )
         self.setCentralWidget(self.shell)
 
         self.shell.navigate.connect(self.navigate)
@@ -262,8 +282,9 @@ class AymtechPro(QMainWindow):
         self.shell.finish_pages()
         self.setMouseTracking(True)
         self.shell.set_background_mode(self.background_mode)
-        self.shell.theme_dock.transparency_switch.setChecked(self.opacity > 0.5)
-        self.shell.theme_dock.animations_switch.setChecked(self.animations_enabled)
+        if SHOW_THEME_PANEL:
+            self.shell.theme_dock.transparency_switch.setChecked(self.opacity > 0.5)
+            self.shell.theme_dock.animations_switch.setChecked(self.animations_enabled)
 
         self.navigation_buttons = list(self.shell.sidebar.buttons.items())
 
@@ -521,10 +542,19 @@ class AymtechPro(QMainWindow):
 
         self.apply_styles()
         self.retheme()
-        self.shell.theme_dock.set_active_theme(self.theme_key)
-        self.shell.theme_dock.apply_button.setStyleSheet(
-            self.shell.theme_dock._apply_style(self.palette)
-        )
+        if SHOW_THEME_PANEL:
+            self.shell.theme_dock.set_active_theme(self.theme_key)
+            self.shell.theme_dock.apply_button.setStyleSheet(
+                self.shell.theme_dock._apply_style(self.palette)
+            )
+
+        # keep the Settings selectors in sync with the active theme
+        if getattr(self, "settings_theme_combo", None) is not None:
+            index = self.settings_theme_combo.findData(self.theme_key)
+            if index >= 0:
+                self.settings_theme_combo.blockSignals(True)
+                self.settings_theme_combo.setCurrentIndex(index)
+                self.settings_theme_combo.blockSignals(False)
 
         if self.dashboard_page is not None:
             self.dashboard_page.set_palette(self.palette, self.panel_opacity)
@@ -596,6 +626,13 @@ class AymtechPro(QMainWindow):
                         ("text", widget, original)
                     )
 
+            elif isinstance(widget, QCheckBox):
+                original = widget.text()
+                if original.strip():
+                    self._translatable_widgets.append(
+                        ("text", widget, original)
+                    )
+
             elif isinstance(widget, QLineEdit):
                 original = widget.placeholderText()
                 if original:
@@ -638,6 +675,9 @@ class AymtechPro(QMainWindow):
             elif kind == "table_header":
                 widget.setText(translated)
 
+        # combo entries keep English originals, so translate them here
+        self.refresh_appearance_texts(language)
+
         # painted status labels are not part of the widget sweep
         # (must run after the sweep, which would otherwise re-apply the
         # captured English originals)
@@ -655,6 +695,41 @@ class AymtechPro(QMainWindow):
         if self.shell is not None:
             self.shell.set_translator(self.tr)
             self.update_status_bar()
+
+    def refresh_appearance_texts(self, language=None):
+        """Translate the theme / background entries of the Settings page."""
+
+        language = language or self.current_language
+
+        combo = getattr(self, "settings_theme_combo", None)
+        if combo is not None:
+            for index in range(combo.count()):
+                palette = ui_theme.PALETTES.get(combo.itemData(index))
+                if palette is not None:
+                    combo.setItemText(
+                        index, translate_text(palette.name, language)
+                    )
+
+        bg_combo = getattr(self, "settings_bg_combo", None)
+        if bg_combo is not None:
+            names = {
+                "circuit": "Tech Circuit",
+                "space": "Deep Space",
+                "grid": "Classic Grid",
+            }
+            for index in range(bg_combo.count()):
+                original = names.get(bg_combo.itemData(index), "")
+                if original:
+                    bg_combo.setItemText(
+                        index, translate_text(original, language)
+                    )
+
+    def _settings_field_label(self, text):
+        """Small grey caption above a Settings field."""
+
+        label = QLabel(text)
+        label.setStyleSheet(f"color: {self.palette.text_muted};")
+        return label
 
     def tr(self, text):
         return translate_text(text, self.current_language)
@@ -904,7 +979,7 @@ class AymtechPro(QMainWindow):
         language_layout.addWidget(self.language_combo)
         layout.addWidget(language_group)
 
-        # ---- appearance ----
+        # ---- appearance (full controls now that the right panel is hidden) ----
         appearance_group = QFrame()
         appearance_group.setObjectName("ToolCard")
         appearance_layout = QVBoxLayout(appearance_group)
@@ -916,22 +991,67 @@ class AymtechPro(QMainWindow):
         appearance_layout.addWidget(appearance_title)
 
         appearance_hint = QLabel(
-            "Themes can also be changed from the Appearance panel on the right."
+            "Theme, background, transparency and animations."
         )
         appearance_hint.setWordWrap(True)
         appearance_hint.setStyleSheet(f"color: {self.palette.text_muted};")
         appearance_layout.addWidget(appearance_hint)
 
-        theme_combo = QComboBox()
-        for key in ui_theme.THEME_ORDER:
-            palette = ui_theme.PALETTES[key]
-            theme_combo.addItem(palette.name, key)
-        theme_combo.setMinimumHeight(40)
-        theme_combo.setCurrentIndex(theme_combo.findData(self.theme_key))
-        theme_combo.currentIndexChanged.connect(
-            lambda index: self.select_theme(theme_combo.itemData(index))
+        appearance_layout.addWidget(
+            self._settings_field_label("Theme")
         )
-        appearance_layout.addWidget(theme_combo)
+
+        self.settings_theme_combo = QComboBox()
+        for key in ui_theme.THEME_ORDER:
+            self.settings_theme_combo.addItem(
+                ui_theme.PALETTES[key].name, key
+            )
+        self.settings_theme_combo.setMinimumHeight(40)
+        self.settings_theme_combo.setMaxVisibleItems(8)
+        self.settings_theme_combo.setCurrentIndex(
+            max(0, self.settings_theme_combo.findData(self.theme_key))
+        )
+        self.settings_theme_combo.currentIndexChanged.connect(
+            lambda index: self.select_theme(
+                self.settings_theme_combo.itemData(index)
+            )
+        )
+        appearance_layout.addWidget(self.settings_theme_combo)
+
+        appearance_layout.addWidget(
+            self._settings_field_label("Background")
+        )
+
+        self.settings_bg_combo = QComboBox()
+        for mode, label in (
+            ("circuit", "Tech Circuit"),
+            ("space", "Deep Space"),
+            ("grid", "Classic Grid"),
+        ):
+            self.settings_bg_combo.addItem(self.tr(label), mode)
+        self.settings_bg_combo.setMinimumHeight(40)
+        self.settings_bg_combo.setCurrentIndex(
+            max(0, self.settings_bg_combo.findData(self.background_mode))
+        )
+        self.settings_bg_combo.currentIndexChanged.connect(
+            lambda index: self.set_background_mode(
+                self.settings_bg_combo.itemData(index)
+            )
+        )
+        appearance_layout.addWidget(self.settings_bg_combo)
+
+        self.settings_transparency_check = QCheckBox("Panel transparency")
+        self.settings_transparency_check.setChecked(self.opacity > 0.5)
+        self.settings_transparency_check.toggled.connect(
+            self.set_transparency
+        )
+        appearance_layout.addWidget(self.settings_transparency_check)
+
+        self.settings_animations_check = QCheckBox("Interface animations")
+        self.settings_animations_check.setChecked(self.animations_enabled)
+        self.settings_animations_check.toggled.connect(self.set_animations)
+        appearance_layout.addWidget(self.settings_animations_check)
+
         layout.addWidget(appearance_group)
 
         # ---- diagnostics ----
@@ -1101,7 +1221,10 @@ class AymtechPro(QMainWindow):
         now = datetime.now()
         self.shell.footer.motto.setText(
             now.strftime("%Y/%m/%d  %H:%M:%S") + "   •   "
-            "Innovation Today ... A Better Tomorrow™"
+            + translate_text(
+                "Innovation Today ... A Better Tomorrow\u2122",
+                self.current_language,
+            )
         )
 
     def create_device_manager(self):

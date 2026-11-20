@@ -1,4 +1,4 @@
-# AYMTECH PRO 2.2
+# AYMTECH PRO 2.2.1
 
 A Windows desktop toolkit for mobile repair technicians, built with PySide6.
 Version 2.0 introduces a completely rebuilt interface in a "holographic tech"
@@ -19,6 +19,10 @@ fully translated English / French / Arabic UI with right-to-left support.
 | --- | --- |
 | ![Control](screenshots/device_control.jpg) | ![iOS](screenshots/ios_tools.jpg) |
 
+| Settings → Appearance |
+| --- |
+| ![Appearance](screenshots/settings_appearance.jpg) |
+
 ## Run
 ```bat
 py -m pip install -r requirements.txt
@@ -35,13 +39,14 @@ The bundled application is written to `dist\AYMTECH_PRO\AYMTECH_PRO.exe`.
 - **Header** – brand emblem, product wordmark, tagline, language menu and
   window controls. The window is frameless: drag it by the header, resize it
   from any edge, double-click the header to maximise.
-- **Sidebar** – 14 service pages with vector icons, an active pill highlight,
+- **Sidebar** – 20 service pages with vector icons, an active pill highlight,
   its own scroll area for short screens, and a gold version plate.
 - **Dashboard** – welcome block with the feature checklist, the mascot on a
   holographic ring, and six gradient action cards that reflow between 1, 2 and
   3 columns.
-- **Appearance panel** – live theme previews, background selector,
-  transparency and animation switches, and an *Apply Theme* button.
+- **Settings → Appearance** – theme, background, transparency and animation
+  controls. The old right-hand theme dock is hidden (set `SHOW_THEME_PANEL =
+  True` in `main.py` to bring it back); the tool pages use the full width.
 - **Status bar** – service state, connected device, ADB availability and a
   running clock.
 
@@ -57,6 +62,14 @@ Every surface – panels, cards, buttons, tables, inputs, scrollbars, tooltips �
 is generated from a single `Palette` object in `ui/theme.py`, so switching a
 theme recolours the whole application instantly. Theme, language, background,
 transparency and animation preferences persist through `QSettings`.
+
+## New in 2.2.1 – cleaner workspace
+- **The Themes dock is hidden** so the tool pages get the full window width.
+  Theme, background, transparency and animation controls now live in
+  **Settings → Appearance**, and every theme name is translated (EN / FR / AR).
+- A theme change, a language change and the footer clock no longer fight each
+  other: checkboxes are part of the translation sweep and the clock motto is
+  re-translated on every tick.
 
 ## New in 2.2 – flashing centre & radio identity
 - **Firmware Center rebuilt** as a flashing centre: identifies the vendor,

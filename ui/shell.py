@@ -365,7 +365,7 @@ class _SidebarFooter(QWidget):
         painter.drawText(
             QRectF(rect.left() + 40, rect.top() + 8, rect.width() - 48, 20),
             Qt.AlignVCenter | Qt.AlignLeft,
-            "AYMTECH PRO  v2.2.0",
+            "AYMTECH PRO  v2.2.1",
         )
         font.setPointSizeF(8.0)
         font.setBold(False)
@@ -394,10 +394,12 @@ class ThemeDock(Panel):
     background_changed = Signal(str)
     apply_clicked = Signal()
 
-    def __init__(self, palette: th.Palette, opacity: float, parent=None):
+    def __init__(self, palette: th.Palette, opacity: float, parent=None,
+                 show_themes: bool = True):
         super().__init__(palette, radius=16.0, opacity=opacity, parent=parent)
         self.setFixedWidth(352)
         self.palette_ = palette
+        self.show_themes = show_themes
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(14, 14, 14, 14)
@@ -414,8 +416,10 @@ class ThemeDock(Panel):
         head.addStretch()
         layout.addLayout(head)
 
+        # ``show_themes`` lets the host hide the four preview cards while
+        # keeping the background / transparency / animation controls.
         self.cards: Dict[str, ThemePreviewCard] = {}
-        for key in th.THEME_ORDER:
+        for key in (th.THEME_ORDER if show_themes else ()):
             preview = th.PALETTES[key]
             preview = th.Palette(**{
                 **preview.__dict__,
@@ -427,10 +431,11 @@ class ThemeDock(Panel):
             layout.addWidget(card)
             self.cards[key] = card
 
-        sep = QFrame()
-        sep.setFrameShape(QFrame.HLine)
-        sep.setStyleSheet("background: rgba(120,170,220,60); max-height:1px;")
-        layout.addWidget(sep)
+        if show_themes:
+            sep = QFrame()
+            sep.setFrameShape(QFrame.HLine)
+            sep.setStyleSheet("background: rgba(120,170,220,60); max-height:1px;")
+            layout.addWidget(sep)
 
         # background chooser
         bg_row = QHBoxLayout()
@@ -801,11 +806,14 @@ class AppShell(QWidget):
     background_changed = Signal(str)
     apply_theme = Signal()
 
-    def __init__(self, palette: th.Palette, opacity: float, parent=None):
+    def __init__(self, palette: th.Palette, opacity: float, parent=None,
+                 show_themes: bool = True, show_dock: bool = True):
         super().__init__(parent)
         self.palette_ = palette
         self.opacity = opacity
         self.animations = True
+        self.show_themes = show_themes
+        self.show_dock = show_dock
 
         self.background = TechBackground(palette, opacity)
         self.background.setParent(self)
@@ -822,7 +830,8 @@ class AppShell(QWidget):
         middle.setSpacing(11)
 
         self.sidebar = Sidebar(palette, opacity)
-        self.theme_dock = ThemeDock(palette, opacity)
+        self.theme_dock = ThemeDock(palette, opacity, show_themes=show_themes)
+        self.theme_dock.setVisible(show_dock)
 
         self.pages: Optional[QStackedWidget] = None
         self.page_container = QWidget()
@@ -901,13 +910,15 @@ class AppShell(QWidget):
         self.background.set_palette(palette, opacity)
         self.header.set_palette(palette, opacity)
         self.sidebar.set_palette(palette, opacity)
-        self.theme_dock.set_palette(palette, opacity)
+        if self.show_dock:
+            self.theme_dock.set_palette(palette, opacity)
         self.footer.set_palette(palette, opacity)
 
     def set_translator(self, translator) -> None:
         self.translator = translator
         self.header.set_translator(translator)
-        self.theme_dock.set_translator(translator)
+        if self.show_dock:
+            self.theme_dock.set_translator(translator)
         self.footer.set_translator(translator)
         self.refresh_localized_texts()
 
@@ -923,6 +934,8 @@ class AppShell(QWidget):
         )
         self.footer.status.set_text(self.tr("Status: Ready"))
         dock = self.theme_dock
+        if dock is None:
+            return
         dock.title.setText(self.tr("Appearance & Themes"))
         dock.bg_label.setText(self.tr("Background"))
         dock.apply_button.setText(self.tr("Apply Theme"))
