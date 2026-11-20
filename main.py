@@ -1,4 +1,4 @@
-from tools.firmware_tools import FirmwareTools
+
 from tools.qualcomm_tools import QualcommTools
 from tools.mediatek_tools import MediaTekTools
 from tools.android_tools import AndroidTools
@@ -36,7 +36,9 @@ from tools.adb_tools import ADBTools
 from tools.device_control import DeviceControl
 from tools.diagnostics import Diagnostics, DeviceLockState
 from tools.fastboot_tools import FastbootTools
+from tools.firmware_center import FirmwareCenter
 from tools.ios_tools import IOSTools
+from tools.network_tools import NetworkTools
 from tools.translations import translate_text
 from tools.unlock_tools import UnlockTools
 
@@ -57,7 +59,7 @@ from ui.widgets import PageSubtitle, PageTitle
 # =========================================================
 
 APP_NAME = "AYMTECH PRO"
-APP_VERSION = "2.1.0"
+APP_VERSION = "2.2.0"
 
 # The application stylesheet is generated per theme by
 # ui.theme.build_stylesheet(); see AymtechPro.apply_styles().
@@ -236,6 +238,7 @@ class AymtechPro(QMainWindow):
             ("Qualcomm Tools", "qualcomm", self.create_qualcomm_tools_page),
             ("MediaTek Tools", "mediatek", self.create_mediatek_tools_page),
             ("Firmware Center", "firmware", self.create_firmware_center_page),
+            ("IMEI & Network", "imei", self.create_imei_page),
             ("Fastboot Tools", "fastboot", self.create_fastboot_page),
             ("Unlock & FRP", "unlock", self.create_unlock_page),
             ("Device Control", "device_manager", self.create_device_control_page),
@@ -744,6 +747,7 @@ class AymtechPro(QMainWindow):
         "Qualcomm Tools": "qualcomm",
         "MediaTek Tools": "mediatek",
         "Firmware Center": "firmware",
+        "IMEI & Network": "imei",
         "Fastboot Tools": "fastboot",
         "Unlock & FRP": "unlock",
         "Device Control": "device_manager",
@@ -1956,42 +1960,115 @@ class AymtechPro(QMainWindow):
     # =====================================================
 
     def create_firmware_center_page(self):
+        """Flashing centre: identify, verify and plan - never auto-flash."""
 
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(30, 25, 30, 25)
-
-        layout.addLayout(
-            self.create_page_header(
-                "Firmware Center",
-                "Manage firmware files and verify file integrity."
-            )
+        tool = ToolPage(
+            self,
+            "Firmware Center",
+            "Identify firmware packages, verify integrity and build a flash plan.",
+            "firmware_device_combo",
         )
+        tool.with_device_selector("Connected Device (for model / CSC matching)")
 
         self.firmware_file_path = ""
-
-        self.firmware_path_label = QLabel("No firmware file selected")
+        self.firmware_path_label = QLabel("No firmware package selected")
         self.firmware_path_label.setWordWrap(True)
-        layout.addWidget(self.firmware_path_label)
+        self.firmware_path_label.setProperty("hint", "true")
+        tool.layout.addWidget(self.firmware_path_label)
 
-        buttons = [
-            (self.tr("Select Firmware File"), self.select_firmware_file),
-            ("File Information", self.firmware_file_information),
-            ("Calculate SHA-256", self.firmware_calculate_sha256),
-            ("Scan Firmware Folder", self.firmware_scan_folder),
-        ]
+        tool.add_section(
+            "PACKAGE",
+            [
+                ("Select Package", self.select_firmware_file),
+                ("Identify", self.firmware_identify),
+                ("Inspect Contents", self.firmware_inspect),
+                ("Library Folder", self.firmware_scan_folder),
+            ],
+        )
 
-        for title, function in buttons:
-            button = QPushButton(title)
-            button.setObjectName("Primary")
-            button.clicked.connect(function)
-            layout.addWidget(button)
+        tool.add_section(
+            "INTEGRITY",
+            [
+                ("SHA-256", self.firmware_calculate_sha256),
+                ("MD5 (Samsung .tar.md5)", self.firmware_md5),
+            ],
+        )
 
-        self.firmware_result_box = QTextEdit()
-        self.firmware_result_box.setReadOnly(True)
-        layout.addWidget(self.firmware_result_box, 1)
+        tool.add_section(
+            "FLASH PLAN",
+            [
+                ("Build Plan (no flashing)", self.firmware_build_plan),
+                ("Save Plan", self.firmware_save_plan),
+                ("Flash With Fastboot", self.firmware_goto_fastboot),
+            ],
+        )
 
-        return page
+        tool.add_note(
+            "AYMTECH PRO never starts a flash by itself. It identifies the "
+            "package, proves the checksum, checks model + region against the "
+            "connected phone, then prints the exact Odin / Heimdall / fastboot "
+            "command so you stay in control.",
+            "hint",
+        )
+
+        tool.with_console("Firmware analysis will appear here...")
+        self.firmware_result_box = tool.result_box
+        self._firmware_tool = tool
+        return tool.finish()
+
+    def firmware_show(self, result, title=None):
+
+        if isinstance(result, tuple):
+            ok, output = result
+        else:
+            ok, output = True, str(result)
+
+        box = getattr(self, "_firmware_tool", None)
+        if box is not None:
+            box.set_output(output, title)
+        elif self.firmware_result_box is not None:
+            self.firmware_result_box.setPlainText(
+                f"========== {title} ==========\n{output}" if title else output
+            )
+        self.log(f"Firmware: {'OK' if ok else 'FAILED'}")
+        return ok
+
+    def _firmware_guard(self):
+
+        if not self.firmware_file_path:
+            QMessageBox.warning(
+                self, self.tr("No File"),
+                self.tr("Please select a firmware file first."),
+            )
+            return False
+        return True
+
+    def _connected_model_region(self):
+        """Model/region of the selected phone, used for mismatch checks."""
+
+        device = self.devices.find(self.selected_serial())
+        if device is None:
+            return "", ""
+
+        ok, model = ADBTools.run(
+            ["-s", device.serial, "shell", "getprop", "ro.product.model"]
+        )
+        ok2, csc = ADBTools.run(
+            ["-s", device.serial, "shell", "getprop", "ro.csc.sales_code"]
+        )
+        return (
+            model.strip() if ok else "",
+            csc.strip() if ok2 and csc.strip() else "",
+        )
+
+    def selected_serial(self):
+
+        combo = getattr(self, "firmware_device_combo", None)
+        if combo is not None and combo.currentData():
+            return combo.currentData()
+
+        device = self.devices.first_authorized()
+        return device.serial if device else ""
 
     def select_firmware_file(self):
 
@@ -2001,7 +2078,7 @@ class AymtechPro(QMainWindow):
             "",
             self.tr("Firmware Files") + " (*.zip *.img *.bin *.tar *.md5 *.mbn "
             "*.xml *.ofp *.kdz *.ftf *.ipsw *.ops *.pac *.br *.dat "
-            "*.lz4);;All Files (*)"
+            "*.lz4 *.tgz);;All Files (*)",
         )
 
         if not file_path:
@@ -2010,77 +2087,122 @@ class AymtechPro(QMainWindow):
         self.firmware_file_path = file_path
         self.firmware_path_label.setText(file_path)
         self.firmware_result_box.setPlainText(
-            "Firmware file selected successfully."
+            f"Package selected:\n{file_path}\n\n"
+            "Next: 'Identify' to read the model/region, then 'SHA-256' or "
+            "'MD5' to prove the file."
         )
 
-    def firmware_file_information(self):
+    def firmware_identify(self):
 
-        if not self.firmware_file_path:
-            QMessageBox.warning(
-                self, self.tr("No File"), self.tr("Please select a firmware file first.")
-            )
+        if not self._firmware_guard():
             return
 
-        ok, output = FirmwareTools.file_information(
-            self.firmware_file_path
+        self.run_background(
+            "Identify firmware",
+            lambda: FirmwareCenter.identify(self.firmware_file_path),
+            lambda result: self.firmware_show(result),
         )
-        self.firmware_result_box.setPlainText(output)
+
+    def firmware_inspect(self):
+
+        if not self._firmware_guard():
+            return
+
+        self.run_background(
+            "Inspect archive",
+            lambda: FirmwareCenter.inspect_archive(self.firmware_file_path),
+            lambda result: self.firmware_show(result, "PACKAGE CONTENTS"),
+        )
 
     def firmware_calculate_sha256(self):
 
-        if not self.firmware_file_path:
+        if not self._firmware_guard():
+            return
+
+        self.run_background(
+            "SHA-256",
+            lambda: FirmwareCenter.hash_file(self.firmware_file_path, "sha256"),
+            lambda result: self.firmware_show(result, "SHA-256"),
+        )
+
+    def firmware_md5(self):
+
+        if not self._firmware_guard():
+            return
+
+        self.run_background(
+            "MD5",
+            lambda: FirmwareCenter.md5_sidecar(self.firmware_file_path),
+            lambda result: self.firmware_show(result, "MD5"),
+        )
+
+    def firmware_build_plan(self):
+
+        if not self._firmware_guard():
+            return
+
+        model, region = self._connected_model_region()
+
+        def done(result):
+            ok, output = result
+            if not model:
+                output += (
+                    "\n\nNo phone is connected, so the model/region could not "
+                    "be checked. Connect the device before flashing."
+                )
+            self.firmware_show((ok, output), "FLASH PLAN")
+
+        self.run_background(
+            "Build flash plan",
+            lambda: FirmwareCenter.build_plan(
+                self.firmware_file_path, model, region
+            ),
+            done,
+        )
+
+    def firmware_save_plan(self):
+
+        text = self.firmware_result_box.toPlainText() if self.firmware_result_box else ""
+        if not text.strip():
             QMessageBox.warning(
-                self, self.tr("No File"), self.tr("Please select a firmware file first.")
+                self, self.tr("Nothing To Save"),
+                "Build a plan first, then save it.",
             )
             return
 
-        ok, output = FirmwareTools.calculate_sha256(
-            self.firmware_file_path
+        self.run_background(
+            "Save flash plan",
+            lambda: FirmwareCenter.export_plan(text),
+            lambda result: self._plan_saved(result),
         )
 
-        if ok:
-            output = (
-                "========== SHA-256 CHECKSUM ==========\n"
-                f"File: {self.firmware_file_path}\n"
-                f"SHA-256: {output}\n\n"
-                "Compare this value with the checksum from "
-                "the official firmware source."
-            )
+    def _plan_saved(self, result):
 
-        self.firmware_result_box.setPlainText(output)
+        ok, output = result
+        QMessageBox.information(
+            self, self.tr("Report Saved"),
+            f"Flash plan saved to:\n{output}" if ok else str(output),
+        )
+        self.log(f"Flash plan saved: {output if ok else 'failed'}")
+
+    def firmware_goto_fastboot(self):
+
+        self.navigate("Fastboot Tools")
+        self.log("Opening Fastboot Tools for the selected image.")
 
     def firmware_scan_folder(self):
 
         folder = QFileDialog.getExistingDirectory(
             self, self.tr("Select Firmware Folder")
         )
-
         if not folder:
             return
 
-        ok, files = FirmwareTools.get_firmware_files(folder)
-
-        if not ok:
-            self.firmware_result_box.setPlainText(str(files))
-            return
-
-        if not files:
-            self.firmware_result_box.setPlainText(
-                "No recognized firmware files found in this folder."
-            )
-            return
-
-        lines = ["========== FIRMWARE FILES =========="]
-
-        for item in files:
-            size_mb = item["size"] / (1024 * 1024)
-            lines.append(
-                f"{item['name']} | {size_mb:.2f} MB | "
-                f"{item['extension']}\n{item['path']}"
-            )
-
-        self.firmware_result_box.setPlainText("\n\n".join(lines))
-
+        self.run_background(
+            "Firmware library",
+            lambda: FirmwareCenter.library(folder),
+            lambda result: self.firmware_show(result, "FIRMWARE LIBRARY"),
+        )
 
     # =====================================================
     # ANDROID SCREEN LOCK SERVICE
@@ -2843,6 +2965,7 @@ class AymtechPro(QMainWindow):
             "Device Control",
             "Packages & Files",
             "Logs & Reports",
+            "IMEI & Network",
             "Live Phone Screen",
             "Android Tools",
             "Screen Lock Service",
@@ -2912,9 +3035,178 @@ class AymtechPro(QMainWindow):
 
         self.log("Checked ADB and Fastboot.")
 
-# =====================================================
-# FASTBOOT TOOLS
-# =====================================================
+    # =====================================================
+    # IMEI & NETWORK
+    # =====================================================
+
+    def create_imei_page(self):
+
+        tool = ToolPage(
+            self,
+            "IMEI & Network",
+            "Read the radio identity, prove the baseband and diagnose the network.",
+            "imei_device_combo",
+        )
+        tool.with_device_selector("Connected Device")
+
+        tool.add_note(
+            "ADB only reads what the modem exposes. Writing an IMEI needs a "
+            "signed vendor tool or a hardware programmer, is illegal in most "
+            "countries, and a failed write destroys the phone's identity - so "
+            "this page never writes one.",
+            "hint",
+        )
+
+        tool.add_section(
+            "IDENTITY",
+            [
+                ("IMEI Report", self.imei_report),
+                ("Quick Identifiers", self.imei_quick),
+            ],
+        )
+
+        tool.add_section(
+            "RADIO / NETWORK",
+            [
+                ("Network Status", self.imei_network),
+                ("Airplane Mode Off", lambda: self.imei_airplane(False)),
+                ("Reset Network Settings", self.imei_reset_network),
+            ],
+        )
+
+        tool.add_section(
+            "SERVICE PATHS",
+            [
+                ("Baseband Repair Guide", self.imei_guide),
+                ("Save Report", self.imei_save),
+            ],
+        )
+
+        tool.with_console("IMEI and network results will appear here...")
+        self.imei_result_box = tool.result_box
+        self._imei_tool = tool
+        return tool.finish()
+
+    def imei_serial(self):
+
+        combo = getattr(self, "imei_device_combo", None)
+        if combo is not None and combo.currentData():
+            return combo.currentData()
+
+        device = self.devices.first_authorized()
+        if device is None:
+            QMessageBox.warning(
+                self, self.tr("No Device"),
+                self.tr("Please connect and select an Android device."),
+            )
+            return None
+        return device.serial
+
+    def imei_show(self, result, title):
+
+        if isinstance(result, tuple):
+            ok, output = result
+        else:
+            ok, output = True, str(result)
+
+        if getattr(self, "_imei_tool", None) is not None:
+            self._imei_tool.set_output(output, title)
+        elif self.imei_result_box is not None:
+            self.imei_result_box.setPlainText(
+                f"========== {title} ==========\n{output}"
+            )
+        self.log(f"IMEI: {title} -> {'OK' if ok else 'FAILED'}")
+        return ok
+
+    def _imei_action(self, title, worker):
+
+        serial = self.imei_serial()
+        if not serial:
+            return
+        self.run_background(
+            f"IMEI {title}",
+            lambda: worker(serial),
+            lambda result: self.imei_show(result, title),
+        )
+
+    def imei_report(self):
+
+        self._imei_action("IDENTITY REPORT", NetworkTools.identity_report)
+
+    def imei_quick(self):
+
+        self._imei_action("QUICK IDENTIFIERS", self._imei_quick_worker)
+
+    def _imei_quick_worker(self, serial):
+
+        values = NetworkTools.identifiers(serial)
+        lines = []
+        for label, value in values.items():
+            if not value:
+                continue
+            lines.append(f"{label:22} {value}")
+        if not lines:
+            return True, (
+                "The firmware did not expose any identity property.\n"
+                "Run 'IMEI Report' for the full analysis."
+            )
+        return True, "\n".join(lines)
+
+    def imei_network(self):
+
+        self._imei_action("NETWORK STATUS", NetworkTools.network_status)
+
+    def imei_airplane(self, enabled):
+
+        self._imei_action(
+            "AIRPLANE MODE",
+            lambda serial: DeviceControl.airplane_mode(serial, enabled),
+        )
+
+    def imei_reset_network(self):
+
+        serial = self.imei_serial()
+        if not serial:
+            return
+
+        if not self._confirm(
+            "Reset network settings",
+            "Reset Wi-Fi, mobile data and Bluetooth settings on the phone?\n\n"
+            "Saved networks and pairings are lost; the IMEI is not touched.",
+        ):
+            return
+
+        self.run_background(
+            "Reset network settings",
+            lambda: ADBTools.run(
+                ["-s", serial, "shell", "svc", "data", "enable"], timeout=20
+            ),
+            lambda result: self.imei_show(result, "NETWORK RESET"),
+        )
+
+    def imei_guide(self):
+
+        self.imei_show(NetworkTools.service_guide(), "BASEBAND / IMEI")
+
+    def imei_save(self):
+
+        text = self.imei_result_box.toPlainText() if self.imei_result_box else ""
+        if not text.strip():
+            QMessageBox.warning(
+                self, self.tr("Nothing To Save"),
+                "Run the IMEI report first, then save it.",
+            )
+            return
+
+        self.run_background(
+            "Save IMEI report",
+            lambda: NetworkTools.save_report(text),
+            lambda result: self._plan_saved(result),
+        )
+
+    # =====================================================
+    # FASTBOOT TOOLS
+    # =====================================================
 
     def create_fastboot_page(self):
 

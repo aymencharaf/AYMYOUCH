@@ -132,6 +132,24 @@ class ToolPage:
     # output console
     # ------------------------------------------------------------------
 
+    def set_output(self, text, title=None):
+        """Write to the console, folding a duplicated banner line."""
+
+        if self.result_box is None:
+            return
+
+        text = text or ""
+        if title:
+            banner = f"========== {title} =========="
+            lines = text.splitlines()
+            # drop the caller's own banner when the block already starts with one
+            if lines and set(lines[0].strip()) <= {"="} and len(lines[0].strip()) > 3:
+                lines = lines[1:]
+                while lines and not lines[0].strip():
+                    lines.pop(0)
+            text = "\n".join([banner] + lines)
+        self.result_box.setPlainText(text)
+
     def with_console(self, placeholder="Results will appear here..."):
         self.result_box = QTextEdit()
         self.result_box.setReadOnly(True)

@@ -24,7 +24,7 @@ DEFAULT_CARDS: Sequence[Tuple[str, str, str, str]] = (
     ("Screen Lock Service", "unlock", "Unlock Tools", "Remove FRP & Unlock"),
     ("Screen Lock Service", "shield", "Screen Lock Service", "Diagnose & Recover"),
     ("Android Tools", "android", "Android Tools", "Advanced Features"),
-    ("ADB Tools", "imei", "IMEI Tools", "Repair IMEI"),
+    ("IMEI & Network", "imei", "IMEI Tools", "Repair IMEI"),
     ("Settings", "settings", "Settings", "Customize Your Experience"),
 )
 

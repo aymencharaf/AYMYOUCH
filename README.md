@@ -1,4 +1,4 @@
-# AYMTECH PRO 2.1
+# AYMTECH PRO 2.2
 
 A Windows desktop toolkit for mobile repair technicians, built with PySide6.
 Version 2.0 introduces a completely rebuilt interface in a "holographic tech"
@@ -6,6 +6,10 @@ style: glowing glass panels, four colour themes, custom painted widgets and a
 fully translated English / French / Arabic UI with right-to-left support.
 
 ![Dashboard](screenshots/dashboard_dark_blue.jpg)
+
+| Firmware Center | IMEI & Network |
+| --- | --- |
+| ![Firmware](screenshots/firmware_center.jpg) | ![IMEI](screenshots/imei_network.jpg) |
 
 | Fastboot Tools | Unlock & FRP |
 | --- | --- |
@@ -53,6 +57,18 @@ Every surface – panels, cards, buttons, tables, inputs, scrollbars, tooltips �
 is generated from a single `Palette` object in `ui/theme.py`, so switching a
 theme recolours the whole application instantly. Theme, language, background,
 transparency and animation preferences persist through `QSettings`.
+
+## New in 2.2 – flashing centre & radio identity
+- **Firmware Center rebuilt** as a flashing centre: identifies the vendor,
+  model, region (CSC) and version inside a package name, lists the partitions of
+  a ZIP/`.tar.md5`, hashes it (SHA-256 and the Samsung MD5), compares model and
+  region with the *connected phone*, and prints the exact Odin / Heimdall /
+  fastboot / SP Flash / idevicerestore command. **It never flashes by itself.**
+- **IMEI & Network** page: reads every identity property, validates the IMEI
+  with its Luhn checksum, detects all-zero (erased NV) and cloned identities,
+  proves whether the baseband started, and produces a carrier-ready report plus
+  the honest repair path for each failure mode. No IMEI writing — that needs a
+  signed vendor tool or a hardware programmer and is illegal in most countries.
 
 ## New in 2.1 – service suite
 - **Fastboot Tools** – device detection, full `getvar` parsing, bootloader lock
@@ -108,6 +124,8 @@ tools/fastboot_tools.py  # bootloader operations
 tools/device_control.py  # keys, text, packages, files, logcat
 tools/diagnostics.py     # security / battery / lock reports
 tools/unlock_tools.py    # lock & FRP analysis, vendor guidance
+tools/firmware_center.py # package identification, hashing, flash plans
+tools/network_tools.py   # IMEI / baseband / network identity reports
 tools/ios_tools.py       # libimobiledevice wrapper
 tools/proc.py            # shared subprocess helper
 ```
