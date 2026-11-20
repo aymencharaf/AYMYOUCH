@@ -231,9 +231,11 @@ def build_stylesheet(p: Palette, opacity: float = 0.9, arrow: str = "") -> str:
     }}
 
     QLabel#SectionTitle {{
-        font-size: 11.5pt;
+        font-size: 10.4pt;
         font-weight: 700;
         color: {p.accent};
+        margin-top: 10px;
+        margin-bottom: 1px;
     }}
 
     QLabel#CardTitle {{
@@ -366,6 +368,20 @@ def build_stylesheet(p: Palette, opacity: float = 0.9, arrow: str = "") -> str:
     QPushButton#Primary:hover {{
         background-color: {p.accent};
         border: 1px solid {mix(p.accent, "#ffffff", 0.45)};
+    }}
+
+    QPushButton#Danger {{
+        background-color: {rgba(hex_rgb(p.danger), 0.16)};
+        color: {p.danger};
+        border: 1px solid {rgba(hex_rgb(p.danger), 0.65)};
+        border-radius: 10px;
+        padding: 10px 14px;
+        font-weight: 700;
+    }}
+
+    QPushButton#Danger:hover {{
+        background-color: {rgba(hex_rgb(p.danger), 0.3)};
+        color: {mix(p.danger, "#ffffff", 0.35)};
     }}
 
     QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {{

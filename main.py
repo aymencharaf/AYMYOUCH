@@ -28,11 +28,17 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QLineEdit,
     QComboBox,
+    QInputDialog,
     QFileDialog,
 )
 
 from tools.adb_tools import ADBTools
+from tools.device_control import DeviceControl
+from tools.diagnostics import Diagnostics, DeviceLockState
+from tools.fastboot_tools import FastbootTools
+from tools.ios_tools import IOSTools
 from tools.translations import translate_text
+from tools.unlock_tools import UnlockTools
 
 from ui import theme as ui_theme
 from ui import icons as ui_icons
@@ -42,6 +48,7 @@ from ui.devices import DeviceRegistry, fill_device_combo
 from ui.pages import PageShell
 from ui.shell import AppShell
 from ui.tasks import TaskRunner
+from ui.tools_ui import ToolPage, labelled
 from ui.widgets import PageSubtitle, PageTitle
 
 
@@ -50,7 +57,7 @@ from ui.widgets import PageSubtitle, PageTitle
 # =========================================================
 
 APP_NAME = "AYMTECH PRO"
-APP_VERSION = "2.0.0"
+APP_VERSION = "2.1.0"
 
 # The application stylesheet is generated per theme by
 # ui.theme.build_stylesheet(); see AymtechPro.apply_styles().
@@ -229,7 +236,12 @@ class AymtechPro(QMainWindow):
             ("Qualcomm Tools", "qualcomm", self.create_qualcomm_tools_page),
             ("MediaTek Tools", "mediatek", self.create_mediatek_tools_page),
             ("Firmware Center", "firmware", self.create_firmware_center_page),
-            ("iOS Tools", "ios", lambda: self.create_tool_page("iOS Tools")),
+            ("Fastboot Tools", "fastboot", self.create_fastboot_page),
+            ("Unlock & FRP", "unlock", self.create_unlock_page),
+            ("Device Control", "device_manager", self.create_device_control_page),
+            ("Packages & Files", "logs", self.create_packages_page),
+            ("Logs & Reports", "logs", self.create_reports_page),
+            ("iOS Tools", "ios", self.create_ios_page),
             ("Operation Logs", "logs", self.create_logs_page),
         ]
 
@@ -732,6 +744,11 @@ class AymtechPro(QMainWindow):
         "Qualcomm Tools": "qualcomm",
         "MediaTek Tools": "mediatek",
         "Firmware Center": "firmware",
+        "Fastboot Tools": "fastboot",
+        "Unlock & FRP": "unlock",
+        "Device Control": "device_manager",
+        "Packages & Files": "logs",
+        "Logs & Reports": "logs",
         "iOS Tools": "ios",
         "Operation Logs": "logs",
         "Settings": "settings",
@@ -2821,6 +2838,11 @@ class AymtechPro(QMainWindow):
         if title in (
             "Device Manager",
             "ADB Tools",
+            "Fastboot Tools",
+            "Unlock & FRP",
+            "Device Control",
+            "Packages & Files",
+            "Logs & Reports",
             "Live Phone Screen",
             "Android Tools",
             "Screen Lock Service",
@@ -2889,6 +2911,1347 @@ class AymtechPro(QMainWindow):
         self.run_background("Tool check", worker, done)
 
         self.log("Checked ADB and Fastboot.")
+
+# =====================================================
+# FASTBOOT TOOLS
+# =====================================================
+
+    def create_fastboot_page(self):
+
+        tool = ToolPage(
+            self,
+            "Fastboot Tools",
+            "Bootloader level servicing: variables, modes and flashing.",
+            "fastboot_device_combo",
+        )
+        tool.with_device_selector(
+            "Connected Device (fastboot units are addressed by serial)"
+        )
+
+        tool.add_section(
+            "BOOTLOADER INFORMATION",
+            [
+                ("Detect Devices", self.fastboot_detect),
+                ("All Variables", self.fastboot_variables),
+                ("Lock State", self.fastboot_lock_state),
+                ("Unlock Guide", self.fastboot_unlock_guide),
+            ],
+        )
+
+        tool.add_section(
+            "RESTART MODES",
+            [
+                ("Boot to Bootloader", lambda: self.fastboot_reboot("bootloader")),
+                ("Boot to Recovery", lambda: self.fastboot_reboot("recovery")),
+                ("Boot to System", lambda: self.fastboot_reboot("system")),
+                ("Continue (from fastbootd)", lambda: self.fastboot_reboot("fastbootd")),
+            ],
+        )
+
+        self.fastboot_partition = QLineEdit()
+        self.fastboot_partition.setMinimumWidth(220)
+        self.fastboot_partition.setPlaceholderText(
+            "Partition name (boot, recovery, vbmeta, super...)"
+        )
+
+        self.fastboot_image = QLineEdit()
+        self.fastboot_image.setMinimumWidth(220)
+        self.fastboot_image.setPlaceholderText("Image file (.img)")
+        browse = QPushButton("Browse")
+        browse.clicked.connect(self.fastboot_pick_image)
+
+        tool.add_section("FLASHING (DESTRUCTIVE - WRITES THE DEVICE)")
+        tool.add_row([labelled("Partition", self.fastboot_partition),
+                      labelled("Image", self.fastboot_image),
+                      browse])
+
+        tool.add_row([
+            self._danger_button("Flash Partition", self.fastboot_flash),
+            self._danger_button("Erase Partition", self.fastboot_erase),
+            self._danger_button("Format Partition", self.fastboot_format),
+        ])
+
+        tool.add_note(
+            "Flashing writes directly to a partition. A wrong image or a wrong "
+            "partition name hard-bricks the phone and voids the warranty. "
+            "Verify the model, the slot (a/b) and the file hash first.",
+            "hint",
+        )
+
+        tool.add_section(
+            "SERVICE ENVIRONMENT",
+            [
+                ("Installed Service Tools", self.show_service_environment),
+                ("Samsung Download Mode Guide", self.show_samsung_guide),
+            ],
+        )
+
+        tool.with_console("Fastboot output will appear here...")
+        self.fastboot_result_box = tool.result_box
+        return tool.finish()
+
+    def _danger_button(self, text, slot):
+
+        button = QPushButton(text)
+        button.setObjectName("Danger")
+        button.clicked.connect(slot)
+        return button
+
+    def fastboot_serial(self):
+        """Selected fastboot unit, or ``None`` for the single attached one."""
+
+        combo = getattr(self, "fastboot_device_combo", None)
+        if combo is not None and combo.currentData():
+            return combo.currentData()
+        return None
+
+    def fastboot_show(self, result, title=None):
+
+        if isinstance(result, tuple):
+            ok, output = result
+        else:
+            ok, output = True, str(result)
+
+        text = output if title is None else f"========== {title} ==========\n{output}"
+
+        if self.fastboot_result_box is not None:
+            self.fastboot_result_box.setPlainText(text)
+
+        self.log(f"Fastboot: {'OK' if ok else 'FAILED'}" + (f" ({title})" if title else ""))
+        return ok
+
+    def fastboot_detect(self):
+
+        self.run_background(
+            "Fastboot devices",
+            FastbootTools.devices,
+            lambda result: self.fastboot_show(result, "FASTBOOT DEVICES"),
+        )
+
+    def fastboot_variables(self):
+
+        serial = self.fastboot_serial()
+        self.run_background(
+            "Fastboot variables",
+            lambda: FastbootTools.variables(serial),
+            lambda result: self.fastboot_show(result, "DEVICE VARIABLES"),
+        )
+
+    def fastboot_lock_state(self):
+
+        serial = self.fastboot_serial()
+        self.run_background(
+            "Fastboot lock state",
+            lambda: self._fastboot_lock_worker(serial),
+            lambda result: self.fastboot_show(result, "BOOTLOADER LOCK"),
+        )
+
+    def _fastboot_lock_worker(self, serial):
+
+        known, unlocked, raw = FastbootTools.is_unlocked(serial)
+        if not known:
+            return True, (
+                f"{raw}\n\n"
+                "The device is not in fastboot mode, or it does not expose the\n"
+                "lock variable (Samsung, Huawei and some vendor builds do not)."
+            )
+
+        verdict = "UNLOCKED" if unlocked else "LOCKED"
+        advice = (
+            "An unlocked bootloader allows flashing custom images, and means the\n"
+            "phone has already been modified (data was wiped when it happened)."
+            if unlocked else
+            "The bootloader is locked: only signed, official firmware can be\n"
+            "written. That is the normal state for a healthy retail phone."
+        )
+        return True, f"State: {verdict}\n\n{advice}\n\nRaw response:\n{raw}"
+
+    def fastboot_reboot(self, mode):
+
+        serial = self.fastboot_serial()
+        label = mode.capitalize()
+        if not self._confirm(
+            "Restart device",
+            f"Restart the device into {label} mode?\n\n"
+            "The phone will leave fastboot and may show a black screen for a "
+            "few seconds.",
+        ):
+            return
+
+        self.run_background(
+            f"Fastboot reboot {mode}",
+            lambda: FastbootTools.reboot(mode, serial),
+            lambda result: self.fastboot_show(result, f"REBOOT {label.upper()}"),
+        )
+
+    def fastboot_pick_image(self):
+
+        path, _ = QFileDialog.getOpenFileName(
+            self, self.tr("Select image file"), "", "Images (*.img *.bin);;All Files (*)"
+        )
+        if path:
+            self.fastboot_image.setText(path)
+
+    def fastboot_flash(self):
+
+        partition = self.fastboot_partition.text().strip()
+        image = self.fastboot_image.text().strip()
+
+        if not partition or not image:
+            QMessageBox.warning(
+                self, self.tr("Missing Information"),
+                "Choose a partition name and an image file first.",
+            )
+            return
+
+        if not self._confirm_typed(
+            "FLASH",
+            f"You are about to write:\n\n{image}\n\ninto partition: {partition}\n\n"
+            "A wrong file, model or slot bricks the phone. This cannot be undone.",
+        ):
+            return
+
+        serial = self.fastboot_serial()
+        self.run_background(
+            f"Flash {partition}",
+            lambda: FastbootTools.flash(partition, image, serial),
+            lambda result: self.fastboot_show(result, f"FLASH {partition.upper()}"),
+        )
+
+    def fastboot_erase(self):
+
+        partition = self.fastboot_partition.text().strip()
+        if not partition:
+            QMessageBox.warning(
+                self, self.tr("Missing Information"),
+                "Enter the partition to erase.",
+            )
+            return
+
+        if not self._confirm_typed(
+            "ERASE",
+            f"Erase partition '{partition}'?\n\n"
+            "Erasing a critical partition (boot, vbmeta, modem, frp) can make the "
+            "phone unbootable or permanently locked.",
+        ):
+            return
+
+        serial = self.fastboot_serial()
+        self.run_background(
+            f"Erase {partition}",
+            lambda: FastbootTools.erase(partition, serial),
+            lambda result: self.fastboot_show(result, f"ERASE {partition.upper()}"),
+        )
+
+    def fastboot_format(self):
+
+        partition = self.fastboot_partition.text().strip() or "userdata"
+        if not self._confirm_typed(
+            "FORMAT",
+            f"Format partition '{partition}'?\n\n"
+            "Formatting userdata erases every file, photo and account on the phone.",
+        ):
+            return
+
+        serial = self.fastboot_serial()
+        self.run_background(
+            f"Format {partition}",
+            lambda: FastbootTools.format_partition(partition, serial),
+            lambda result: self.fastboot_show(result, f"FORMAT {partition.upper()}"),
+        )
+
+    def fastboot_unlock_guide(self):
+
+        self.fastboot_show(FastbootTools.device_guide(), "BOOTLOADER UNLOCK")
+
+    # =====================================================
+    # UNLOCK / FRP
+    # =====================================================
+
+    def create_unlock_page(self):
+
+        tool = ToolPage(
+            self,
+            "Unlock & FRP",
+            "Lock state, account protection and the supported service paths.",
+            "unlock_device_combo",
+        )
+        tool.with_device_selector("Connected Device")
+
+        tool.add_note(
+            "This page reports what the phone's own firmware says and runs only "
+            "the commands Android supports. It never bypasses a lock: modern "
+            "devices with FBE encryption and verified boot cannot be unlocked "
+            "from ADB.",
+            "hint",
+        )
+
+        tool.add_section(
+            "ANALYSIS",
+            [
+                ("Full Lock Report", self.unlock_full_report),
+                ("FRP / Account State", self.unlock_frp_status),
+                ("Device Admins & MDM", self.unlock_device_admins),
+                ("Bootloader Status", self.unlock_bootloader),
+            ],
+        )
+
+        tool.add_section(
+            "SUPPORTED OPERATIONS",
+            [
+                ("Remove Swipe Lock", self.unlock_remove_swipe),
+                ("Clear Known PIN", self.unlock_clear_pin),
+            ],
+        )
+
+        self.unlock_pin = QLineEdit()
+        self.unlock_pin.setPlaceholderText("New PIN (4-16 digits)")
+        self.unlock_pin.setEchoMode(QLineEdit.Password)
+        tool.add_row([
+            labelled("Set a temporary PIN", self.unlock_pin),
+            QPushButton("Set PIN", clicked=self.unlock_set_pin),
+        ])
+
+        tool.add_section(
+            "OFFICIAL RECOVERY PATHS",
+            [
+                ("FRP Removal Explained", self.unlock_frp_explained),
+                ("Samsung Service Guide", self.show_samsung_guide),
+                ("Knox Note", self.unlock_knox_note),
+            ],
+        )
+
+        tool.with_console("Lock analysis will appear here...")
+        self.unlock_result_box = tool.result_box
+
+        export = QPushButton("Save Report to File")
+        export.clicked.connect(lambda: self.export_report(self.unlock_result_box, "unlock"))
+        tool.layout.addWidget(export)
+        return tool.finish()
+
+    def unlock_serial(self):
+
+        combo = getattr(self, "unlock_device_combo", None)
+        if combo is not None and combo.currentData():
+            return combo.currentData()
+
+        device = self.devices.first_authorized()
+        if device is None:
+            QMessageBox.warning(
+                self, self.tr("No Device"),
+                self.tr("Please connect and select an Android device."),
+            )
+            return None
+        return device.serial
+
+    def unlock_show(self, result, title=None):
+
+        if isinstance(result, tuple):
+            ok, output = result
+        else:
+            ok, output = True, str(result)
+
+        text = f"========== {title} ==========\n{output}" if title else output
+        if self.unlock_result_box is not None:
+            self.unlock_result_box.setPlainText(text)
+        self.log(f"Unlock service: {'OK' if ok else 'FAILED'}")
+        return ok
+
+    def unlock_full_report(self):
+
+        serial = self.unlock_serial()
+        if not serial:
+            return
+
+        self.run_background(
+            "Lock report",
+            lambda: Diagnostics.security_report(serial),
+            lambda result: self.unlock_show(result, "LOCK REPORT"),
+        )
+
+    def unlock_frp_status(self):
+
+        serial = self.unlock_serial()
+        if not serial:
+            return
+
+        self.run_background(
+            "FRP status",
+            lambda: UnlockTools.frp_status(serial),
+            lambda result: self.unlock_show(result, "FRP / ACCOUNT"),
+        )
+
+    def unlock_device_admins(self):
+
+        serial = self.unlock_serial()
+        if not serial:
+            return
+
+        self.run_background(
+            "Device admins",
+            lambda: UnlockTools.device_admins(serial),
+            lambda result: self.unlock_show(result, "DEVICE ADMINS"),
+        )
+
+    def unlock_bootloader(self):
+
+        serial = self.unlock_serial()
+        if not serial:
+            return
+
+        self.run_background(
+            "Bootloader status",
+            lambda: self._bootloader_worker(serial),
+            lambda result: self.unlock_show(result, "BOOTLOADER"),
+        )
+
+    def _bootloader_worker(self, serial):
+
+        props = Diagnostics.read_props(
+            serial,
+            {
+                "Bootloader locked": "ro.boot.flash.locked",
+                "Verified boot": "ro.boot.verifiedbootstate",
+                "Warranty bit": "ro.boot.warranty_bit",
+                "vbmeta state": "ro.boot.vbmeta.device_state",
+            },
+        )
+        state = Diagnostics.bootloader_state(props)
+        lines = [
+            f"Bootloader      : {state}",
+            f"Verified boot   : {props.get('Verified boot') or 'not reported'}",
+            f"vbmeta state    : {props.get('vbmeta state') or 'not reported'}",
+            f"Knox warranty   : {Diagnostics.knox_state(props)}",
+            "",
+        ]
+        if "UNLOCKED" in state or "UNVERIFIED" in state:
+            lines.append(
+                "The device has been modified. Expect SafetyNet/Play Integrity\n"
+                "failures and possible app incompatibilities."
+            )
+        else:
+            lines.append(
+                "Stock, locked firmware. Unlocking would wipe all data and void\n"
+                "the warranty; see 'Unlock Guide' on the Fastboot page."
+            )
+        return True, "\n".join(lines)
+
+    def unlock_remove_swipe(self):
+
+        serial = self.unlock_serial()
+        if not serial:
+            return
+
+        if not self._confirm(
+            "Remove swipe lock",
+            "Disable the swipe (non-secure) lock screen?\n\n"
+            "A PIN, pattern or password lock is not affected.",
+        ):
+            return
+
+        self.run_background(
+            "Remove swipe lock",
+            lambda: UnlockTools.remove_swipe_lock(serial),
+            lambda result: self.unlock_show(result, "SWIPE LOCK"),
+        )
+
+    def unlock_clear_pin(self):
+
+        serial = self.unlock_serial()
+        if not serial:
+            return
+
+        if not self._confirm_typed(
+            "CLEAR",
+            "Clear the screen lock?\n\n"
+            "This only works on an already-unlocked phone whose ADB session is "
+            "authorised. It does not remove FRP and does not bypass a lock you "
+            "cannot open.",
+        ):
+            return
+
+        self.run_background(
+            "Clear screen lock",
+            lambda: UnlockTools.clear_known_pin(serial),
+            lambda result: self.unlock_show(result, "SCREEN LOCK"),
+        )
+
+    def unlock_set_pin(self):
+
+        serial = self.unlock_serial()
+        if not serial:
+            return
+
+        pin = self.unlock_pin.text().strip()
+        self.run_background(
+            "Set PIN",
+            lambda: UnlockTools.set_pin(serial, pin),
+            lambda result: self.unlock_show(result, "SET PIN"),
+        )
+
+    def unlock_frp_explained(self):
+
+        self.unlock_show(UnlockTools.frp_explanation(), "FRP")
+
+    def unlock_knox_note(self):
+
+        self.unlock_show(UnlockTools.knox_note(), "KNOX")
+
+    # =====================================================
+    # DEVICE CONTROL
+    # =====================================================
+
+    def create_device_control_page(self):
+
+        tool = ToolPage(
+            self,
+            "Device Control",
+            "Drive the phone remotely: keys, text, network and system toggles.",
+            "control_device_combo",
+        )
+        tool.with_device_selector("Connected Device")
+
+        tool.add_section(
+            "NAVIGATION",
+            [
+                ("Wake Screen", lambda: self.control_key("KEYCODE_WAKEUP")),
+                ("Home", lambda: self.control_key("KEYCODE_HOME")),
+                ("Back", lambda: self.control_key("KEYCODE_BACK")),
+                ("Recents", lambda: self.control_key("KEYCODE_APP_SWITCH")),
+                ("Power", lambda: self.control_key("KEYCODE_POWER")),
+                ("Volume Up", lambda: self.control_key("KEYCODE_VOLUME_UP")),
+                ("Volume Down", lambda: self.control_key("KEYCODE_VOLUME_DOWN")),
+            ],
+        )
+
+        self.control_text = QLineEdit()
+        self.control_text.setMinimumWidth(220)
+        self.control_text.setPlaceholderText("Text to type on the phone")
+        tool.add_row([
+            labelled("Type text", self.control_text),
+            QPushButton("Send Text", clicked=self.control_send_text),
+        ])
+
+        self.control_keyname = QLineEdit()
+        self.control_keyname.setMinimumWidth(220)
+        self.control_keyname.setPlaceholderText("Custom keycode (KEYCODE_ENTER, 26, ...)")
+        tool.add_row([
+            labelled("Custom key", self.control_keyname),
+            QPushButton("Send Key", clicked=self.control_send_custom_key),
+        ])
+
+        tool.add_section(
+            "NETWORK & SYSTEM",
+            [
+                ("Wi-Fi On", lambda: self.control_wifi(True)),
+                ("Wi-Fi Off", lambda: self.control_wifi(False)),
+                ("Data On", lambda: self.control_data(True)),
+                ("Data Off", lambda: self.control_data(False)),
+                ("Airplane On", lambda: self.control_airplane(True)),
+                ("Airplane Off", lambda: self.control_airplane(False)),
+                ("Stay Awake On", lambda: self.control_stay_awake(True)),
+                ("Stay Awake Off", lambda: self.control_stay_awake(False)),
+            ],
+        )
+
+        tool.add_section(
+            "QUICK ACTIONS",
+            [
+                ("Open Settings", lambda: self.control_open_settings("settings")),
+                ("Developer Options", lambda: self.control_open_settings("application_development_settings")),
+                ("Battery Saver Settings", lambda: self.control_open_settings("battery_saver_settings")),
+                ("Wi-Fi Address", self.control_ip),
+                ("Screen Size", self.control_screen_size),
+                ("Fast Animations", lambda: self.control_animations("0.5")),
+                ("Restore Animations", lambda: self.control_animations("1.0")),
+            ],
+        )
+
+        tool.add_section(
+            "ADB CONNECTION",
+            [
+                ("Restart ADB Server", self.control_restart_adb),
+                ("Pair over Wi-Fi", self.control_wireless),
+            ],
+        )
+
+        self.control_host = QLineEdit()
+        self.control_host.setPlaceholderText("Phone IP address")
+        tool.add_row([
+            labelled("Wireless debugging address", self.control_host),
+            QPushButton("Connect", clicked=self.control_connect_wireless),
+        ])
+
+        tool.with_console("Command results will appear here...")
+        self.control_result_box = tool.result_box
+        return tool.finish()
+
+    def control_serial(self):
+
+        combo = getattr(self, "control_device_combo", None)
+        if combo is not None and combo.currentData():
+            return combo.currentData()
+
+        device = self.devices.first_authorized()
+        if device is None:
+            QMessageBox.warning(
+                self, self.tr("No Device"),
+                self.tr("Please connect and select an Android device."),
+            )
+            return None
+        return device.serial
+
+    def control_show(self, result, title):
+
+        if isinstance(result, tuple):
+            ok, output = result
+        else:
+            ok, output = True, str(result)
+
+        if self.control_result_box is not None:
+            self.control_result_box.setPlainText(
+                f"========== {title} ==========\n{output}"
+            )
+        self.log(f"Device control: {title} -> {'OK' if ok else 'FAILED'}")
+        return ok
+
+    def _control_action(self, title, worker):
+
+        serial = self.control_serial()
+        if not serial:
+            return
+        self.run_background(
+            title,
+            lambda: worker(serial),
+            lambda result: self.control_show(result, title),
+        )
+
+    def control_key(self, keycode):
+
+        self._control_action(
+            f"Key {keycode}", lambda serial: DeviceControl.key(serial, keycode)
+        )
+
+    def control_send_text(self):
+
+        text = self.control_text.text()
+        if not text.strip():
+            return
+        self._control_action(
+            "Type text", lambda serial: DeviceControl.text(serial, text)
+        )
+
+    def control_send_custom_key(self):
+
+        code = self.control_keyname.text().strip()
+        if not code:
+            return
+        self.control_key(code)
+
+    def control_wifi(self, enabled):
+        self._control_action(
+            f"Wi-Fi {'on' if enabled else 'off'}",
+            lambda serial: DeviceControl.wifi(serial, enabled),
+        )
+
+    def control_data(self, enabled):
+        self._control_action(
+            f"Data {'on' if enabled else 'off'}",
+            lambda serial: DeviceControl.mobile_data(serial, enabled),
+        )
+
+    def control_airplane(self, enabled):
+        self._control_action(
+            f"Airplane {'on' if enabled else 'off'}",
+            lambda serial: DeviceControl.airplane_mode(serial, enabled),
+        )
+
+    def control_stay_awake(self, enabled):
+        self._control_action(
+            "Stay awake", lambda serial: DeviceControl.stay_awake(serial, enabled)
+        )
+
+    def control_open_settings(self, page):
+        self._control_action(
+            "Open settings", lambda serial: DeviceControl.open_settings(serial, page)
+        )
+
+    def control_ip(self):
+        self._control_action(
+            "Wi-Fi address", lambda serial: DeviceControl.ip_address(serial)
+        )
+
+    def control_screen_size(self):
+        self._control_action(
+            "Screen size", lambda serial: DeviceControl.screen_size(serial)
+        )
+
+    def control_animations(self, scale):
+        self._control_action(
+            f"Animation scale {scale}",
+            lambda serial: DeviceControl.animation_scale(serial, scale),
+        )
+
+    def control_restart_adb(self):
+
+        self.run_background(
+            "Restart ADB server",
+            DeviceControl.restart_adb_server,
+            lambda result: self.control_show(result, "ADB SERVER"),
+        )
+
+    def control_wireless(self):
+
+        self.control_show(
+            (
+                True,
+                "Wireless debugging requires Android 11 or newer.\n\n"
+                "On the phone: Developer options -> Wireless debugging ->\n"
+                "'Pair device with pairing code'. Then connect the computer to\n"
+                "the same Wi-Fi network and run:\n\n"
+                "    adb pair <ip>:<pairing-port>\n"
+                "    adb connect <ip>:<debug-port>\n\n"
+                "The pairing port and the debug port are different numbers.",
+            ),
+            "WIRELESS DEBUGGING",
+        )
+
+    def control_connect_wireless(self):
+
+        host = self.control_host.text().strip()
+        if not host:
+            QMessageBox.warning(
+                self, self.tr("Missing Information"),
+                "Enter the phone's Wi-Fi IP address first.",
+            )
+            return
+
+        port = 5555
+        if ":" in host:
+            host, port_text = host.rsplit(":", 1)
+            port = int(port_text) if port_text.isdigit() else 5555
+
+        self.run_background(
+            "Wireless ADB connect",
+            lambda: DeviceControl.wireless_connect(host, port),
+            lambda result: self.control_show(result, "WIRELESS ADB"),
+        )
+
+    # =====================================================
+    # PACKAGES & FILES
+    # =====================================================
+
+    def create_packages_page(self):
+
+        tool = ToolPage(
+            self,
+            "Packages & Files",
+            "Install, inspect and remove apps; browse and transfer device files.",
+            "packages_device_combo",
+        )
+        tool.with_device_selector("Connected Device")
+
+        tool.add_section(
+            "APPLICATIONS",
+            [
+                ("User Apps", lambda: self.packages_list(False)),
+                ("System Apps", lambda: self.packages_list(True)),
+                ("Uninstall", self.packages_uninstall),
+                ("Clear App Data", self.packages_clear),
+                ("Disable App", self.packages_disable),
+                ("Enable App", self.packages_enable),
+            ],
+        )
+
+        self.package_name = QLineEdit()
+        self.package_name.setMinimumWidth(220)
+        self.package_name.setPlaceholderText("Package name (com.example.app)")
+        tool.add_row([
+            labelled("Package", self.package_name),
+            QPushButton("App Info", clicked=self.packages_info),
+            QPushButton("Install APK", clicked=self.packages_install),
+        ])
+
+        tool.add_section(
+            "FILES",
+            [
+                ("Browse /sdcard", lambda: self.files_browse("/sdcard")),
+                ("Storage Usage", self.files_storage),
+                ("Pull File", self.files_pull),
+                ("Push File", self.files_push),
+                ("Delete Path", self.files_delete),
+            ],
+        )
+
+        self.file_remote = QLineEdit()
+        self.file_remote.setMinimumWidth(220)
+        self.file_remote.setPlaceholderText("/sdcard/DCIM/Camera/photo.jpg")
+
+        self.file_local = QLineEdit()
+        self.file_local.setMinimumWidth(220)
+        self.file_local.setPlaceholderText("Local file or folder")
+        browse = QPushButton("Browse")
+        browse.clicked.connect(self.files_pick_local)
+
+        tool.add_row([
+            labelled("Device path", self.file_remote),
+            labelled("Computer path", self.file_local),
+            browse,
+        ])
+
+        tool.with_console("App and file results will appear here...")
+        self.packages_result_box = tool.result_box
+        return tool.finish()
+
+    def packages_serial(self):
+
+        combo = getattr(self, "packages_device_combo", None)
+        if combo is not None and combo.currentData():
+            return combo.currentData()
+
+        device = self.devices.first_authorized()
+        if device is None:
+            QMessageBox.warning(
+                self, self.tr("No Device"),
+                self.tr("Please connect and select an Android device."),
+            )
+            return None
+        return device.serial
+
+    def packages_show(self, result, title):
+
+        if isinstance(result, tuple):
+            ok, output = result
+        else:
+            ok, output = True, str(result)
+
+        if self.packages_result_box is not None:
+            self.packages_result_box.setPlainText(
+                f"========== {title} ==========\n{output}"
+            )
+        self.log(f"Packages & files: {title} -> {'OK' if ok else 'FAILED'}")
+        return ok
+
+    def _packages_action(self, title, worker):
+
+        serial = self.packages_serial()
+        if not serial:
+            return
+        self.run_background(
+            title,
+            lambda: worker(serial),
+            lambda result: self.packages_show(result, title),
+        )
+
+    def packages_list(self, system):
+
+        self._packages_action(
+            "Package list", lambda serial: DeviceControl.packages(serial, system)
+        )
+
+    def _package_arg(self):
+
+        name = self.package_name.text().strip()
+        if not name:
+            QMessageBox.warning(
+                self, self.tr("Missing Information"),
+                "Enter a package name first.",
+            )
+        return name or None
+
+    def packages_info(self):
+
+        name = self._package_arg()
+        if not name:
+            return
+        self._packages_action(
+            "App info", lambda serial: DeviceControl.package_info(serial, name)
+        )
+
+    def packages_install(self):
+
+        path, _ = QFileDialog.getOpenFileName(
+            self, self.tr("Select APK File"), "", "Android APK (*.apk)"
+        )
+        if not path:
+            return
+        self._packages_action(
+            "Install APK", lambda serial: DeviceControl.install(serial, path)
+        )
+
+    def packages_uninstall(self):
+
+        name = self._package_arg()
+        if not name:
+            return
+        if not self._confirm(
+            "Uninstall application",
+            f"Uninstall {name}?\n\nAll of its data on the phone is deleted.",
+        ):
+            return
+        self._packages_action(
+            "Uninstall", lambda serial: DeviceControl.uninstall(serial, name)
+        )
+
+    def packages_clear(self):
+
+        name = self._package_arg()
+        if not name:
+            return
+        if not self._confirm(
+            "Clear application data", f"Delete all data stored by {name}?"
+        ):
+            return
+        self._packages_action(
+            "Clear data", lambda serial: DeviceControl.clear_package(serial, name)
+        )
+
+    def packages_disable(self):
+
+        name = self._package_arg()
+        if not name:
+            return
+        self._packages_action(
+            "Disable app", lambda serial: DeviceControl.disable_package(serial, name)
+        )
+
+    def packages_enable(self):
+
+        name = self._package_arg()
+        if not name:
+            return
+        self._packages_action(
+            "Enable app", lambda serial: DeviceControl.enable_package(serial, name)
+        )
+
+    def files_browse(self, path):
+
+        self._packages_action(
+            "Browse", lambda serial: DeviceControl.list_dir(serial, path)
+        )
+
+    def files_storage(self):
+
+        self._packages_action(
+            "Storage usage", lambda serial: DeviceControl.storage_map(serial)
+        )
+
+    def files_pull(self):
+
+        remote = self.file_remote.text().strip()
+        local = self.file_local.text().strip() or os.path.basename(remote)
+
+        if not remote:
+            QMessageBox.warning(
+                self, self.tr("Missing Information"),
+                "Enter the device path to copy.",
+            )
+            return
+
+        self._packages_action(
+            "Pull file", lambda serial: DeviceControl.pull(serial, remote, local)
+        )
+
+    def files_push(self):
+
+        remote = self.file_remote.text().strip()
+        local = self.file_local.text().strip()
+
+        if not remote or not local:
+            QMessageBox.warning(
+                self, self.tr("Missing Information"),
+                "Choose a computer file and the device destination path.",
+            )
+            return
+
+        self._packages_action(
+            "Push file", lambda serial: DeviceControl.push(serial, local, remote)
+        )
+
+    def files_delete(self):
+
+        remote = self.file_remote.text().strip()
+        if not remote:
+            return
+        if not self._confirm_typed(
+            "DELETE",
+            f"Permanently delete this path on the phone?\n\n{remote}",
+        ):
+            return
+        self._packages_action(
+            "Delete path", lambda serial: DeviceControl.delete(serial, remote)
+        )
+
+    def files_pick_local(self):
+
+        path, _ = QFileDialog.getOpenFileName(
+            self, self.tr("Select local file"), "", "All Files (*)"
+        )
+        if path:
+            self.file_local.setText(path)
+
+    # =====================================================
+    # LOGS & REPORTS
+    # =====================================================
+
+    def create_reports_page(self):
+
+        tool = ToolPage(
+            self,
+            "Logs & Reports",
+            "Device logcat, full security reports and saved service files.",
+            "reports_device_combo",
+        )
+        tool.with_device_selector("Connected Device")
+
+        tool.add_section(
+            "LOGCAT",
+            [
+                ("Read Last 200 Lines", lambda: self.reports_logcat(200)),
+                ("Read Last 1000 Lines", lambda: self.reports_logcat(1000)),
+                ("Clear Log Buffer", self.reports_clear_logcat),
+            ],
+        )
+
+        tool.add_section(
+            "REPORTS",
+            [
+                ("Security Report", self.reports_security),
+                ("Battery Report", self.reports_battery),
+                ("Lock / Keyguard Report", self.reports_lock),
+                ("Full Device Report", self.reports_full),
+                ("Save Shown Report", self.reports_save),
+                ("Open Reports Folder", self.reports_open_folder),
+            ],
+        )
+
+        tool.with_console("Logs and reports will appear here...")
+        self.reports_result_box = tool.result_box
+        return tool.finish()
+
+    def reports_serial(self):
+
+        combo = getattr(self, "reports_device_combo", None)
+        if combo is not None and combo.currentData():
+            return combo.currentData()
+
+        device = self.devices.first_authorized()
+        if device is None:
+            QMessageBox.warning(
+                self, self.tr("No Device"),
+                self.tr("Please connect and select an Android device."),
+            )
+            return None
+        return device.serial
+
+    def reports_show(self, result, title):
+
+        if isinstance(result, tuple):
+            ok, output = result
+        else:
+            ok, output = True, str(result)
+
+        if self.reports_result_box is not None:
+            self.reports_result_box.setPlainText(
+                f"########## {title} ##########\n{output}"
+            )
+        self.log(f"Report: {title} -> {'OK' if ok else 'FAILED'}")
+        return ok
+
+    def _reports_action(self, title, worker):
+
+        serial = self.reports_serial()
+        if not serial:
+            return
+        self.run_background(
+            title,
+            lambda: worker(serial),
+            lambda result: self.reports_show(result, title),
+        )
+
+    def reports_logcat(self, lines):
+
+        self._reports_action(
+            "Logcat", lambda serial: DeviceControl.logcat(serial, lines)
+        )
+
+    def reports_clear_logcat(self):
+
+        self._reports_action(
+            "Clear logcat", lambda serial: DeviceControl.clear_logcat(serial)
+        )
+
+    def reports_security(self):
+
+        self._reports_action(
+            "Security report", lambda serial: Diagnostics.security_report(serial)
+        )
+
+    def reports_battery(self):
+
+        self._reports_action(
+            "Battery report", lambda serial: Diagnostics.battery_report(serial)
+        )
+
+    def reports_lock(self):
+
+        self._reports_action(
+            "Lock report", lambda serial: DeviceLockState.read(serial)
+        )
+
+    def reports_full(self):
+
+        self._reports_action("Full report", lambda serial: self._full_report_worker(serial))
+
+    def _full_report_worker(self, serial):
+
+        parts = []
+        for title, worker in (
+            ("IDENTITY & INTEGRITY", Diagnostics.security_report),
+            ("BATTERY", Diagnostics.battery_report),
+            ("KEYGUARD", lambda s: "\n".join(DeviceLockState.read(s)[1])),
+            ("PACKAGES", lambda s: DeviceControl.packages(s)[1][:4000]),
+        ):
+            try:
+                _ok, output = worker(serial)
+            except Exception as error:  # noqa: BLE001
+                output = f"failed: {error}"
+
+            parts.append("=" * 62)
+            parts.append(title)
+            parts.append("=" * 62)
+            parts.append(output if output else "(no data)")
+            parts.append("")
+        return True, "\n".join(parts)
+
+    def reports_save(self):
+
+        self.export_report(self.reports_result_box, "report")
+
+    def export_report(self, box, prefix):
+
+        if box is None or not box.toPlainText().strip():
+            QMessageBox.warning(
+                self, self.tr("Nothing To Save"),
+                "Run a report first, then save it.",
+            )
+            return
+
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            self.tr("Save Report"),
+            f"{prefix}_report.txt",
+            "Text files (*.txt)",
+        )
+        if not path:
+            return
+
+        try:
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(box.toPlainText())
+        except OSError as error:
+            QMessageBox.critical(self, self.tr("Save Failed"), str(error))
+            return
+
+        self.log(f"Report saved: {path}")
+        QMessageBox.information(
+            self, self.tr("Report Saved"), f"Saved to:\n{path}"
+        )
+
+    def reports_open_folder(self):
+
+        folder = os.path.join(os.getcwd(), "reports")
+        os.makedirs(folder, exist_ok=True)
+
+        from PySide6.QtGui import QDesktopServices
+        from PySide6.QtCore import QUrl
+
+        QDesktopServices.openUrl(QUrl.fromLocalFile(folder))
+        self.log(f"Reports folder: {folder}")
+
+    # =====================================================
+    # SHARED SERVICE HELPERS
+    # =====================================================
+
+    def _confirm(self, title, message):
+
+        answer = QMessageBox.question(
+            self, self.tr(title), message,
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+        return answer == QMessageBox.Yes
+
+    def _confirm_typed(self, word, message):
+        """Second, typed confirmation used before every destructive action."""
+
+        text, ok = QInputDialog.getText(
+            self,
+            self.tr("Confirm Destructive Operation"),
+            f"{message}\n\nType {word} to continue:",
+        )
+        return bool(ok) and text.strip().upper() == word.upper()
+
+    def show_service_environment(self):
+
+        self.run_background(
+            "Service environment",
+            UnlockTools.service_environment,
+            lambda result: self._show_in("unlock_result_box", result, "SERVICE TOOLS"),
+        )
+
+    def show_samsung_guide(self):
+
+        box = "unlock_result_box"
+        if getattr(self, box, None) is None or not self.unlock_result_box.isVisible():
+            box = "fastboot_result_box"
+        self._show_in(box, UnlockTools.samsung_guide(), "SAMSUNG SERVICE GUIDE")
+
+    def _show_in(self, box_name, result, title=None):
+
+        box = getattr(self, box_name, None)
+        if box is None:
+            return
+
+        output = result[1] if isinstance(result, tuple) else str(result)
+
+        text = f"========== {title} ==========\n{output}" if title else output
+        box.setPlainText(text)
+
+# =====================================================
+# iOS TOOLS
+# =====================================================
+
+    def create_ios_page(self):
+
+        tool = ToolPage(
+            self,
+            "iOS Tools",
+            "iPhone detection, diagnostics, backup and restore via libimobiledevice.",
+            "ios_device_combo",
+        )
+
+        tool.add_section(
+            "DEVICE",
+            [
+                ("Detect iPhones", self.ios_detect),
+                ("Device Info", self.ios_info),
+                ("Pair / Trust", self.ios_pair),
+                ("Diagnostics", self.ios_diagnostics),
+            ],
+        )
+
+        tool.add_section(
+            "DATA",
+            [
+                ("Backup to Computer", self.ios_backup),
+                ("Inspect Backup", self.ios_backup_info),
+                ("Live System Log", self.ios_syslog),
+            ],
+        )
+
+        tool.add_section(
+            "RECOVERY (APPLE SERVERS ONLY)",
+            [
+                ("Restore iPhone", self.ios_restore),
+            ],
+        )
+
+        tool.add_note(
+            "Restoring uses Apple's own signing servers through the open-source "
+            "idevicerestore client. Activation Lock (Find My iPhone) is enforced "
+            "by Apple and is never bypassed.",
+            "hint",
+        )
+
+        tool.add_section(
+            "HELP",
+            [
+                ("Recovery / DFU Steps", self.ios_modes),
+                ("Service Environment", self.ios_environment),
+            ],
+        )
+
+        tool.with_console("iPhone results will appear here...")
+        self.ios_result_box = tool.result_box
+        return tool.finish()
+
+    def ios_show(self, result, title):
+
+        if isinstance(result, tuple):
+            ok, output = result
+        else:
+            ok, output = True, str(result)
+
+        if self.ios_result_box is not None:
+            self.ios_result_box.setPlainText(
+                f"========== {title} ==========\n{output}"
+            )
+        self.log(f"iOS: {title} -> {'OK' if ok else 'FAILED'}")
+        return ok
+
+    def _ios_action(self, title, worker):
+
+        self.run_background(
+            f"iOS {title}",
+            worker,
+            lambda result: self.ios_show(result, title),
+        )
+
+    def ios_detect(self):
+        self._ios_action("IPHONES", IOSTools.devices)
+
+    def ios_info(self):
+        self._ios_action("IPHONE INFO", IOSTools.info)
+
+    def ios_pair(self):
+        self._ios_action("PAIRING", IOSTools.pair)
+
+    def ios_diagnostics(self):
+        self._ios_action("DIAGNOSTICS", IOSTools.diagnostics)
+
+    def ios_syslog(self):
+        self._ios_action("SYSTEM LOG", lambda: IOSTools.syslog(8))
+
+    def ios_backup(self):
+
+        folder = QFileDialog.getExistingDirectory(
+            self, self.tr("Choose backup folder")
+        )
+        if not folder:
+            return
+        self._ios_action(
+            "BACKUP", lambda: IOSTools.backup(folder)
+        )
+
+    def ios_backup_info(self):
+
+        folder = QFileDialog.getExistingDirectory(
+            self, self.tr("Choose backup folder")
+        )
+        if not folder:
+            return
+        self.ios_show(IOSTools.backup_info(folder), "BACKUP FOLDER")
+
+    def ios_restore(self):
+
+        if not self._confirm_typed(
+            "RESTORE",
+            "Restore the iPhone now?\n\n"
+            "This downloads the signed firmware from Apple, erases the phone "
+            "and installs the latest iOS. It needs a stable internet "
+            "connection and can take 20-40 minutes.",
+        ):
+            return
+
+        self._ios_action("RESTORE", IOSTools.restore)
+
+    def ios_modes(self):
+
+        self.ios_show(IOSTools.mode_guide(), "RECOVERY / DFU")
+
+    def ios_environment(self):
+
+        self._ios_action("ENVIRONMENT", IOSTools.environment)
 
     # =====================================================
     # REFRESH DEVICE MANAGER

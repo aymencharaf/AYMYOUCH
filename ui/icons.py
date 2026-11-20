@@ -15,6 +15,7 @@ from PySide6.QtGui import (
     QPainterPath,
     QPen,
     QPixmap,
+    QPolygonF,
 )
 
 
@@ -330,6 +331,33 @@ def _palette(p: QPainter, r: QRectF, c: QColor) -> None:
             r.center().y() + dy * r.height() - 2.0, 4.0, 4.0))
 
 
+def _bootloader(p: QPainter, r: QRectF, c: QColor) -> None:
+    """Lightning bolt over a chip: fastboot / flashing."""
+
+    p.setPen(_pen(c, 1.8))
+    p.setBrush(Qt.NoBrush)
+    body = QRectF(r.left() + 1.5, r.top() + 3.0, r.width() - 3.0, r.height() - 6.0)
+    p.drawRoundedRect(body, 3.0, 3.0)
+
+    for x in (0.28, 0.72):
+        top = QPointF(r.left() + body.width() * x, body.top())
+        p.drawLine(top, QPointF(top.x(), r.top() + 0.6))
+        bottom = QPointF(top.x(), body.bottom())
+        p.drawLine(bottom, QPointF(bottom.x(), r.bottom() - 0.6))
+
+    bolt = QPolygonF([
+        QPointF(r.center().x() + 1.8, r.center().y() - 5.2),
+        QPointF(r.center().x() - 2.6, r.center().y() + 0.4),
+        QPointF(r.center().x() + 0.2, r.center().y() + 0.4),
+        QPointF(r.center().x() - 1.4, r.center().y() + 5.2),
+        QPointF(r.center().x() + 3.0, r.center().y() - 0.8),
+        QPointF(r.center().x() + 0.2, r.center().y() - 0.8),
+    ])
+    p.setBrush(c)
+    p.setPen(Qt.NoPen)
+    p.drawPolygon(bolt)
+
+
 PAINTERS = {
     "dashboard": _home,
     "device_manager": _gear,
@@ -343,6 +371,7 @@ PAINTERS = {
     "qualcomm": _letter("Q"),
     "mediatek": _letter("M"),
     "firmware": _chip,
+    "fastboot": _bootloader,
     "ios": _apple,
     "logs": _list,
     "imei": _barcode,

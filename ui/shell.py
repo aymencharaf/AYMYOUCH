@@ -365,7 +365,7 @@ class _SidebarFooter(QWidget):
         painter.drawText(
             QRectF(rect.left() + 40, rect.top() + 8, rect.width() - 48, 20),
             Qt.AlignVCenter | Qt.AlignLeft,
-            "AYMTECH PRO  v2.0.0",
+            "AYMTECH PRO  v2.1.0",
         )
         font.setPointSizeF(8.0)
         font.setBold(False)

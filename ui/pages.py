@@ -10,7 +10,11 @@ from .widgets import Panel
 
 
 class PageShell(QWidget):
-    """Wraps an existing page in the standard glass panel."""
+    """Wraps an existing page in the standard glass panel.
+
+    The panel adds a little padding and lets the page grow with its content
+    (scroll area), so tall service pages never clip their last button.
+    """
 
     def __init__(self, palette: th.Palette, content: QWidget, opacity: float = 0.9, parent=None):
         super().__init__(parent)
@@ -23,7 +27,7 @@ class PageShell(QWidget):
         layout.addWidget(self.panel)
 
         inner = QVBoxLayout(self.panel)
-        inner.setContentsMargins(14, 14, 14, 14)
+        inner.setContentsMargins(12, 12, 12, 12)
         inner.setSpacing(0)
 
         scroll = QScrollArea()

@@ -1,4 +1,4 @@
-# AYMTECH PRO 2.0
+# AYMTECH PRO 2.1
 
 A Windows desktop toolkit for mobile repair technicians, built with PySide6.
 Version 2.0 introduces a completely rebuilt interface in a "holographic tech"
@@ -6,6 +6,14 @@ style: glowing glass panels, four colour themes, custom painted widgets and a
 fully translated English / French / Arabic UI with right-to-left support.
 
 ![Dashboard](screenshots/dashboard_dark_blue.jpg)
+
+| Fastboot Tools | Unlock & FRP |
+| --- | --- |
+| ![Fastboot](screenshots/fastboot_tools.jpg) | ![Unlock](screenshots/unlock_frp.jpg) |
+
+| Device Control | iOS Tools |
+| --- | --- |
+| ![Control](screenshots/device_control.jpg) | ![iOS](screenshots/ios_tools.jpg) |
 
 ## Run
 ```bat
@@ -46,6 +54,25 @@ is generated from a single `Palette` object in `ui/theme.py`, so switching a
 theme recolours the whole application instantly. Theme, language, background,
 transparency and animation preferences persist through `QSettings`.
 
+## New in 2.1 – service suite
+- **Fastboot Tools** – device detection, full `getvar` parsing, bootloader lock
+  state, restart modes, and partition **flash / erase / format** behind a
+  typed confirmation.
+- **Unlock & FRP** – an honest lock report (bootloader, verified boot, Knox
+  warranty bit, FRP, signed-in accounts, device admins/MDM), the only two lock
+  operations Android actually supports, and the official removal paths.
+- **Device Control** – key events, text input, Wi-Fi / data / airplane toggles,
+  stay-awake, animation scale, settings shortcuts and wireless ADB pairing.
+- **Packages & Files** – user/system package lists, app info, install,
+  uninstall, disable, clear data, plus browse, pull, push and delete.
+- **Logs & Reports** – logcat, battery, keyguard and a full security report that
+  can be saved as a text file.
+- **iOS Tools** – iPhone detection, diagnostics, pairing, backup, live syslog
+  and restore via `libimobiledevice` (Apple servers only, no Activation Lock
+  bypass).
+- Every new page runs its commands on the worker pool with the same spinner
+  and busy overlay, and is fully translated (EN / FR / AR, RTL included).
+
 ## Features
 - ADB device detection, device manager and device information.
 - ADB tools: reboot modes, APK install, screenshots, app list, battery and
@@ -71,11 +98,18 @@ ui/shell.py          # header, sidebar, theme dock, footer
 ui/dashboard.py      # dashboard view
 ui/pages.py          # page wrapper
 ui/icons.py          # QPainter vector icon set
+ui/tools_ui.py       # shared builder for the service pages
 ui/tasks.py          # QThreadPool runner for background ADB work
 ui/devices.py        # shared device registry + combo-box binding
 ui/busy.py           # inline spinner and page busy overlay
 assets/              # logo, mascot and background artwork
-tools/               # ADB/tool logic and translations
+tools/adb_tools.py   # ADB engine
+tools/fastboot_tools.py  # bootloader operations
+tools/device_control.py  # keys, text, packages, files, logcat
+tools/diagnostics.py     # security / battery / lock reports
+tools/unlock_tools.py    # lock & FRP analysis, vendor guidance
+tools/ios_tools.py       # libimobiledevice wrapper
+tools/proc.py            # shared subprocess helper
 ```
 
 ## Screenshots
@@ -86,11 +120,22 @@ py main.py --export-screenshots
 Images are written to `screenshots/`.
 
 ## Scope and limits
-This is not a full flashing suite. It does not write firmware, unlock
-bootloaders or remove device security. Firmware availability depends on the
-model and region, and compatibility, signatures and file sources must be
-verified before any operation. iPhone recovery is performed with Apple Devices
-or official Apple tools and may erase data.
+The suite performs real ADB and Fastboot operations, but it is **not** a
+lock-bypass product:
+
+- Flashing writes whatever image you select to whatever partition you name.
+  Model, region, slot and file hash must be verified first — a wrong file
+  bricks the phone.
+- A bootloader unlock only works when the manufacturer allows it (Pixel,
+  Nothing, many Motorola, Xiaomi after the waiting period…). Samsung, Huawei,
+  most Oppo/Realme/vivo and carrier units cannot be unlocked at all.
+- FRP is cleared by the original account, by the manufacturer/Google after a
+  proof of purchase, or by a signed service firmware — never by an ADB command.
+  Any tool that claims otherwise is a scam or damages the phone.
+- iPhone restore goes through Apple's signing servers; Activation Lock is
+  enforced by Apple and is not bypassed.
+- Vendor binaries (Odin, Heimdall, EDL, SP Flash, libimobiledevice) are not
+  bundled; the app detects what is installed and explains what is missing.
 
 ## Official sources
 - Android SDK Platform-Tools: https://developer.android.com/tools/releases/platform-tools
